@@ -63,7 +63,8 @@ def process_types_and_backends(option):
         return ret
 
     for backend in backend_types.keys():
-        assert(backend in all_backends)
+        if backend not in all_backends:
+            raise Exception("unknown backend: " + backend)
         backend_types[backend] = set(expand(backend_types[backend]))
 
     # special case remove Half for cpu unless it is explicitly enabled

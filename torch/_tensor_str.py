@@ -249,6 +249,8 @@ def get_summarized_data(self):
 
 
 def _str(self):
+    if "checkpoint" in self.type():
+        return 'checkpoint: ' + _str(self.decheckpoint())
     prefix = 'tensor('
     indent = len(prefix)
     suffixes = []

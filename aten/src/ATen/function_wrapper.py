@@ -69,6 +69,7 @@ ${switch_prologue}
 switch (dispatch_scalar_type) {
     ${cases}
     default:
+        gdb();
         AT_ERROR("${api_name} not supported on ${Type} for ", dispatch_scalar_type);
 }
 """)
@@ -240,7 +241,7 @@ scalar_types = [
     ('BFloat16', 'BFloat16', 'BFloat16AccrealNotDefined', True),
 ]
 
-static_dispatch_backends = ['CPU', 'QuantizedCPU']
+static_dispatch_backends = ['CPU', 'QuantizedCPU', 'Checkpoint']
 
 
 class NYIError(Exception):
@@ -1290,6 +1291,7 @@ def create_generic(top_env, declarations):
                     # Mutably populate option with values
                     process_legacy_th_option(option)
                 else:
+                    print(option)
                     output_option = process_native(option)
                     if output_option:
                         output_options.append(output_option)

@@ -460,6 +460,8 @@ class weak_intrusive_ptr final {
  public:
   using element_type = TTarget;
 
+  weak_intrusive_ptr() noexcept : weak_intrusive_ptr(NullType::singleton()) {}
+
   explicit weak_intrusive_ptr(const intrusive_ptr<TTarget, NullType>& ptr)
       : weak_intrusive_ptr(ptr.get()) {
     retain_();
