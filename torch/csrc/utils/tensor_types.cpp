@@ -21,6 +21,10 @@ static const char* backend_to_string(const at::Backend& backend) {
     case at::Backend::CUDA: return "torch.cuda";
     case at::Backend::SparseCPU: return "torch.sparse";
     case at::Backend::SparseCUDA: return "torch.cuda.sparse";
+    // We split complex into its own backend, but keeping it the same here for now
+    case at::Backend::ComplexCPU: return "torch";
+    case at::Backend::ComplexCUDA: return "torch.cuda";
+    case at::Backend::CheckPoint: return "torch.checkpoint";
     default: AT_ERROR("Unimplemented backend ", backend);
   }
 }

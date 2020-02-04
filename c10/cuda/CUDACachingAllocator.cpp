@@ -17,10 +17,20 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <c10/core/TensorImpl.h>
 
 namespace c10 {
 
 C10_DEFINE_REGISTRY(FreeCudaMemoryCallbacksRegistry, FreeMemoryCallback);
+
+evict_func_t evict_func = nullptr;
+void set_evict_func(evict_func_t ef) {
+  evict_func = ef;
+}
+
+evict_func_t get_evict_func() {
+  return evict_func;
+}
 
 namespace cuda {
 namespace CUDACachingAllocator {
@@ -201,10 +211,20 @@ class THCCachingAllocator {
   // Thus, do not call a public method from another public method.
 
   /** allocates a block which is safe to use from the provided stream */
+  // Technically speaking, it is still allocating more memory then it should,
+  // But it doesn't do anything with it until more memory are found, so it is morally ok - no experimental result will be changed.
   void malloc(void** devPtr, size_t size, cudaStream_t stream)
   {
-    std::lock_guard<std::recursive_mutex> lock(mutex);
+    malloc_inner(devPtr, size, stream);
+    auto evict_func = get_evict_func();
+    if (evict_func) {
+      (*evict_func)();
+    }
+  }
 
+  void malloc_inner(void** devPtr, size_t size, cudaStream_t stream)
+  {
+    std::lock_guard<std::recursive_mutex> lock(mutex);
     int device;
     C10_CUDA_CHECK(cudaGetDevice(&device));
 

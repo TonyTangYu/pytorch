@@ -386,7 +386,7 @@ def declare_outputs():
     for f in core_files:
         core_file_manager.will_write(f)
     files = ['Declarations.yaml', 'TypeDefault.cpp', 'TypeDefault.h',
-             'Functions.h', 'NativeFunctions.h', 'BackendSelectRegister.cpp']
+             'Functions.h', 'NativeFunctions.h', 'BackendSelectRegister.cpp', 'CheckpointType.cpp']
     for f in files:
         file_manager.will_write(f)
     for backend, density in iterate_types():

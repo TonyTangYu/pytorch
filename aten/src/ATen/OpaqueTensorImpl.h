@@ -59,9 +59,9 @@ struct CAFFE2_API OpaqueTensorImpl : public TensorImpl {
 
   bool has_storage() const override {
     return false;
-    }
+  }
 
-  const Storage& storage() const override{
+  const Storage& storage() const override {
     AT_ERROR("opaque tensors do not have storage");
   }
 
