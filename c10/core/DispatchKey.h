@@ -222,6 +222,9 @@ enum class DispatchKey : uint8_t {
   AutogradPrivateUse2,
   AutogradPrivateUse3,
 
+  // Checkpoint must go after Autograd. This way, Autograd will hook ad outside of CheckpointTensor.
+  Checkpoint,
+
   Tracer,
 
   // Autocasting precedes VariableTypeId, to ensure casts are autograd-exposed
