@@ -310,6 +310,9 @@ class CAFFE2_API Tensor {
   /// Returns a `Tensor`'s device.
   Device device() const;
 
+  /// Returns a `Tensor`'s device.
+  c10::optional<Device> optional_device() const;
+
   /// Returns a `Tensor`'s device index.
   int64_t get_device() const;
 

@@ -79,6 +79,8 @@ const char* toString(DispatchKey t) {
       return "AutogradPrivateUse3";
     case DispatchKey::AutogradOther:
       return "AutogradOther";
+    case DispatchKey::Checkpoint:
+      return "Checkpoint";
     case DispatchKey::BackendSelect:
       return "BackendSelect";
     case DispatchKey::Named:
