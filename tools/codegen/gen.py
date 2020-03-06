@@ -1244,6 +1244,8 @@ def main() -> None:
     pre_grouped_native_functions = defaultdict(dict)
     for f in native_functions:
         d = pre_grouped_native_functions[f.func.signature()]
+        if f.func.kind() in d:
+            print(f)
         assert f.func.kind() not in d
         d[f.func.kind()] = f
 
@@ -1302,6 +1304,7 @@ def main() -> None:
         "SparseCUDA",
         "QuantizedCPU",
         "QuantizedCUDA",
+        "Checkpoint",
         "Math",
         "DefaultBackend",
         # Meta is a magic key: it is automatically generated for structured
