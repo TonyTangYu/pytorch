@@ -112,6 +112,13 @@ enum class DispatchKey : uint8_t {
   // constructed by the output, and otherwise defers to the backend to
   // actually do the numeric computation.  VariableTensorId contains
   // the bulk of this logic.
+
+  // WARNING! If you add more "wrapper" style tensor ids (tensor
+  // ids which don't get kernels directly defined in native_functions.yaml;
+  // examples are tracing or profiling) here, you need to also adjust
+  // legacyExtractDispatchKey in c10/core/DispatchKeySet.h to mask them out.
+  CheckPointTensorId,
+
   VariableTensorId,
 
   // Pre-autograd dispatch keys allow backends to override the autograd behavior

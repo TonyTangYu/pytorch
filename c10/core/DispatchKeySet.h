@@ -130,7 +130,7 @@ static inline DispatchKey legacyExtractDispatchKey(DispatchKeySet s) {
   // VariableTensorId is being excluded from a DispatchKeySet right after dispatching
   // (See variable_excluded_from_dispatch in TensorBody.h)
   // Now we are getting rid of BackendSelect.
-  return s.remove(DispatchKey::BackendSelect).highestPriorityTypeId();
+  return s.remove(DispatchKey::BackendSelect).remove(DispatchKey::CheckPointTensorId).highestPriorityTypeId();
 }
 
 }

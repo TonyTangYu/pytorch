@@ -34,6 +34,8 @@ const char* toString(DispatchKey t) {
       return "MkldnnCPUTensorId";
     case DispatchKey::QuantizedCPUTensorId:
       return "QuantizedCPUTensorId";
+    case DispatchKey::CheckPointTensorId:
+      return "CheckPointTensorId";
     case DispatchKey::VariableTensorId:
       return "VariableTensorId";
     case DispatchKey::BackendSelect:
