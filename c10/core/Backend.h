@@ -40,10 +40,48 @@ enum class Backend {
   Metal,
   QuantizedCPU,
   QuantizedCUDA,
+  Checkpoint,
   Undefined,
   MkldnnCPU,
   NumOptions
 };
+
+static inline const char* toString(Backend b) {
+  switch (b) {
+  case Backend::CPU:
+    return "CPU";
+  case Backend::CUDA:
+    return "CUDA";
+  case Backend::HIP:
+    return "HIP";
+  case Backend::FPGA:
+    return "FPGA";
+  case Backend::MSNPU:
+    return "MSNPU";
+  case Backend::XLA:
+    return "XLA";
+  case Backend::SparseCPU:
+    return "SparseCPU";
+  case Backend::SparseCUDA:
+    return "SparseCUDA";
+  case Backend::SparseHIP:
+    return "SparseHIP";
+  case Backend::MkldnnCPU:
+    return "MkldnnCPU";
+  case Backend::Vulkan:
+    return "Vulkan";
+  case Backend::Metal:
+    return "Metal";
+  case Backend::QuantizedCPU:
+    return "QuantizedCPU";
+  case Backend::QuantizedCUDA:
+    return "QuantizedCUDA";
+  case Backend::Checkpoint:
+    return "Checkpoint";
+  default:
+    return "UNKNOWN_BACKEND";
+  }
+}
 
 static inline Backend toSparse(Backend b) {
   switch (b) {
@@ -60,7 +98,7 @@ static inline Backend toSparse(Backend b) {
     case Backend::SparseHIP:
       return Backend::SparseHIP;
     default:
-      throw std::runtime_error("Unknown backend");
+      throw std::runtime_error(std::string("Unknown backend: ") + toString(b));
   }
 }
 
@@ -89,7 +127,7 @@ static inline Backend toDense(Backend b) {
     case Backend::QuantizedCUDA:
       return Backend::QuantizedCUDA;
     default:
-      throw std::runtime_error("Unknown backend");
+      throw std::runtime_error(std::string("Unknown backend: ") + toString(b));
   }
 }
 
@@ -124,6 +162,8 @@ static inline Backend dispatchKeyToBackend(DispatchKey t) {
     return Backend::QuantizedCUDA;
   } else if (t == DispatchKey::Undefined) {
     return Backend::Undefined;
+  } else if (t == DispatchKey::Checkpoint) {
+    return Backend::Checkpoint;
   } else {
     AT_ERROR("Unrecognized tensor type ID: ", t);
   }
@@ -159,10 +199,12 @@ static inline DispatchKey backendToDispatchKey(Backend b) {
       return DispatchKey::QuantizedCPU;
     case Backend::QuantizedCUDA:
       return DispatchKey::QuantizedCUDA;
+    case Backend::Checkpoint:
+      return DispatchKey::Checkpoint;
     case Backend::Undefined:
       return DispatchKey::Undefined;
     default:
-      throw std::runtime_error("Unknown backend");
+      throw std::runtime_error(std::string("Unknown backend: ") + toString(b));
   }
 }
 
@@ -198,7 +240,7 @@ static inline DeviceType backendToDeviceType(Backend b) {
     case Backend::Undefined:
       AT_ERROR("Undefined backend is not a valid device type");
     default:
-      AT_ERROR("Unknown backend");
+      AT_ERROR(std::string("Unknown backend: ") + toString(b));
   }
 }
 
@@ -230,7 +272,7 @@ static inline Backend backendToCPU(Backend b) {
     case Backend::Undefined:
       return Backend::Undefined;
     default:
-      AT_ERROR("Unknown backend");
+      AT_ERROR(std::string("Unknown backend: ") + toString(b));
   }
 }
 
@@ -250,7 +292,7 @@ static inline Backend backendToCUDA(Backend b) {
     case Backend::Undefined:
       return Backend::Undefined;
     default:
-      AT_ERROR("Unknown backend");
+      AT_ERROR(std::string("Unknown backend: ") + toString(b));
   }
 }
 
@@ -271,42 +313,6 @@ static inline Backend backendToHIP(Backend b) {
       return Backend::Undefined;
     default:
       AT_ERROR("Unknown backend");
-  }
-}
-
-// TODO: This probably shouldn't actually be static inline
-static inline const char* toString(Backend b) {
-  switch (b) {
-    case Backend::CPU:
-      return "CPU";
-    case Backend::CUDA:
-      return "CUDA";
-    case Backend::HIP:
-      return "HIP";
-    case Backend::FPGA:
-      return "FPGA";
-    case Backend::MSNPU:
-      return "MSNPU";
-    case Backend::XLA:
-      return "XLA";
-    case Backend::SparseCPU:
-      return "SparseCPU";
-    case Backend::SparseCUDA:
-      return "SparseCUDA";
-    case Backend::SparseHIP:
-      return "SparseHIP";
-    case Backend::MkldnnCPU:
-      return "MkldnnCPU";
-    case Backend::Vulkan:
-      return "Vulkan";
-    case Backend::Metal:
-      return "Metal";
-    case Backend::QuantizedCPU:
-      return "QuantizedCPU";
-    case Backend::QuantizedCUDA:
-      return "QuantizedCUDA";
-    default:
-      return "UNKNOWN_BACKEND";
   }
 }
 

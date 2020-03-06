@@ -1143,28 +1143,6 @@ std::vector<Tensor> unsafe_split(const Tensor& self, int64_t split_size, int64_t
   return result;
 }
 
-std::vector<Tensor> split_with_sizes(const Tensor& self, IntArrayRef split_sizes, int64_t dim) {
-  TORCH_CHECK(self.dim() != 0, "split expects at least a 1-dimensional tensor");
-  int64_t dim_size = self.size(dim);
-  int64_t num_splits = split_sizes.size();
-  std::vector<Tensor> splits(num_splits);
-  int64_t start_idx = 0;
-  int64_t i;
-
-  for (i = 0; i < num_splits; ++i) {
-    auto length = split_sizes[i];
-    TORCH_CHECK(length >= 0,
-             "split_with_sizes expects split_sizes have only non-negative ",
-             "entries, but got split_sizes=", split_sizes);
-    splits[i] = self.narrow(dim, start_idx, length);
-    start_idx += length;
-  }
-  TORCH_CHECK(start_idx == dim_size,
-           "split_with_sizes expects split_sizes to sum exactly to ", dim_size,
-           " (input tensor's size at dimension ", dim, "), ", "but got split_sizes=", split_sizes);
-  return splits;
-}
-
 std::vector<Tensor> unsafe_split_with_sizes(const Tensor& self, IntArrayRef split_sizes, int64_t dim) {
   auto result = at::native::split_with_sizes(self, split_sizes, dim);
   for (auto& t : result) {

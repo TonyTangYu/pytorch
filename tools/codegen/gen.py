@@ -1293,6 +1293,7 @@ def main() -> None:
         "QuantizedCPU",
         "QuantizedCUDA",
         "Math",
+        "Checkpoint",
         "DefaultBackend",
         # Meta is a magic key: it is automatically generated for structured
         # kernels
