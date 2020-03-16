@@ -465,6 +465,10 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
     return *device_opt_;
   }
 
+  c10::optional<c10::Device> optional_device() const {
+    return device_opt_;
+  }
+
   Layout layout() const {
     // NB: This method is not virtual and avoid dispatches for perf.
     if (is_sparse()) {
@@ -858,7 +862,8 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
 
   /**
    * One TensorImpl can be copied to another TensorImpl if they have the same
-   * DispatchKeySet. The only two special cases (for legacy reason) are:
+   * DispatchKeySet.
+   * Special cases (for legacy reason) are:
    * CPUTensorId is compatible with CUDATensorId and SparseCPUTensorId is
    * compatible with SparseCUDATensorId.
    */

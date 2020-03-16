@@ -37,7 +37,7 @@ enum class Backend {
   QuantizedCPU,
   Undefined,
   MkldnnCPU,
-  CheckPoint,
+  Checkpoint,
   NumOptions
 };
 
@@ -64,8 +64,8 @@ static inline const char* toString(Backend b) {
     return "MkldnnCPU";
   case Backend::QuantizedCPU:
     return "QuantizedCPU";
-  case Backend::CheckPoint:
-    return "CheckPoint";
+  case Backend::Checkpoint:
+    return "Checkpoint";
   default:
     return "UNKNOWN_BACKEND";
   }
@@ -138,8 +138,8 @@ static inline Backend dispatchKeyToBackend(DispatchKey t) {
     return Backend::QuantizedCPU;
   } else if (t == DispatchKey::Undefined) {
     return Backend::Undefined;
-  } else if (t == DispatchKey::CheckPointTensorId) {
-    return Backend::CheckPoint;
+  } else if (t == DispatchKey::CheckpointTensorId) {
+    return Backend::Checkpoint;
   } else {
     AT_ERROR("Unrecognized tensor type ID: ", t);
   }
@@ -167,8 +167,8 @@ static inline DispatchKey backendToDispatchKey(Backend b) {
       return DispatchKey::MkldnnCPUTensorId;
     case Backend::QuantizedCPU:
       return DispatchKey::QuantizedCPUTensorId;
-    case Backend::CheckPoint:
-      return DispatchKey::CheckPointTensorId;
+    case Backend::Checkpoint:
+      return DispatchKey::CheckpointTensorId;
     case Backend::Undefined:
       return DispatchKey::Undefined;
     default:

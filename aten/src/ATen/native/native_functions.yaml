@@ -1,5 +1,13 @@
 # See README.md in this directory for more guidance
 
+- func: checkpoint(Tensor self) -> Tensor
+  variants: method
+
+- func: is_checkpoint(Tensor self) -> bool
+  variants: method
+
+- func: decheckpoint(Tensor self) -> Tensor
+  variants: method
 
 # Temporary type cast operators. These are needed to trace type-casts now since
 # Type's are not supported in the IR. Instead, we call down to these
@@ -285,6 +293,7 @@
     SparseCPU: add_sparse
     SparseCUDA: add_sparse
     MkldnnCPU: mkldnn_add
+    Checkpoint: checkpoint_add
   supports_named_tensor: True
 
 - func: add_.Tensor(Tensor(a!) self, Tensor other, *, Scalar alpha=1) -> Tensor(a!)
