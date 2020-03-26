@@ -28,14 +28,6 @@ void DTRLog(const std::string& str);
 struct CAFFE2_API CheckpointTensorCell : intrusive_ptr_target {
   Tensor t;
   explicit CheckpointTensorCell(const Tensor& t) : t(t.detach()) { }
-  int id = gen_counter();
-  static int counter;
-  static int gen_counter() {
-    return counter++;
-  }
-  std::string name() {
-    return std::string("x") + std::to_string(id);
-  }
 };
 
 struct CAFFE2_API CheckpointTensorImplCell : intrusive_ptr_target {
@@ -57,12 +49,21 @@ using rematerialize_function_t = std::function<Tensors(const Tensors&)>;
 using mutate_function_t = std::function<void(const Tensors&)>;
 
 inline DispatchKeySet convert_key_set(const DispatchKeySet& t) {
+  CHECK(!t.has(DispatchKey::CheckpointTensorId));
   auto ret = t.add(DispatchKey::CheckpointTensorId);
   CHECK(!ret.has(DispatchKey::VariableTensorId));
   return ret;
 }
 
 struct CAFFE2_API CheckpointTensorImpl : TensorImpl {
+  int id = gen_counter();
+  static int counter;
+  static int gen_counter() {
+    return counter++;
+  }
+  std::string counter_name() {
+    return std::string("x") + std::to_string(id);
+  }
   intrusive_ptr<CheckpointTensorImplCell> ref;
   void release_resources() final {
     ref.reset();
@@ -73,10 +74,34 @@ struct CAFFE2_API CheckpointTensorImpl : TensorImpl {
   explicit CheckpointTensorImpl(const Tensor& t) : CheckpointTensorImpl(intrusive_ptr<CheckpointTensorImplCell>::make(t)) { }
   static Tensors make(const std::string& name,
                       const rematerialize_function_t& remat,
-                      const strongs& input_values);
+                      const Tensors& inputs);
+  // mutate_idx indicate which of the inputs will get mutated.
   static void mutate(const std::string& name,
                      const mutate_function_t& mutate,
-                     const Tensors& input_values);
+                     const Tensors& inputs,
+                     const std::vector<size_t>& mutate_idx);
+  intrusive_ptr<TensorImpl> shallow_copy_and_detach(const VariableVersion& version_counter,
+                                                    bool allow_tensor_metadata_change) const override {
+    return intrusive_ptr<CheckpointTensorImpl>::make(ref);
+  }
+  int64_t dim() const override {
+    return ref->value->t.dim();
+  }
+  int64_t numel() const override {
+    return ref->value->t.numel();
+  }
+  IntArrayRef sizes() const override {
+    return ref->value->t.sizes();
+  }
+  int64_t size(int64_t d) const override {
+    return ref->value->t.size(d);
+  }
+  IntArrayRef strides() const override {
+    return ref->value->t.strides();
+  }
+  bool has_storage() const override {
+    return false;
+  }
 };
 
 inline CheckpointTensorImpl* get_cpti(const Tensor& t) {
@@ -85,12 +110,12 @@ inline CheckpointTensorImpl* get_cpti(const Tensor& t) {
   return cpti;
 }
 
-inline strong from_tensor(const Tensor& t) {
+inline std::tuple<strong, std::string> from_tensor(const Tensor& t) {
   auto* cpt = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
   if(cpt != nullptr) {
-    return cpt->ref->value;
+    return {cpt->ref->value, cpt->counter_name()};
   } else {
-    return get_cpti(native::checkpoint(t))->ref->value;
+    return from_tensor(native::checkpoint(t));
   }
 }
 

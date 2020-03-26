@@ -25,12 +25,13 @@ void DTRLog(const std::string& str) {
   logger.out << str << std::endl;
 }
 
-int CheckpointTensorCell::counter = 0;
+int CheckpointTensorImpl::counter = 0;
 
 Tensors make_raw(const rematerialize_function_t& remat,
                  const strongs& input_values) {
   std::vector<Tensor> input;
   for (const strong& s: input_values) {
+    CHECK(!s->t.key_set().has(DispatchKey::CheckpointTensorId));
     input.push_back(s->t);
   }
   auto output = remat(input);
@@ -43,41 +44,55 @@ Tensors make_raw(const rematerialize_function_t& remat,
 
 Tensors CheckpointTensorImpl::make(const std::string& name,
                                    const rematerialize_function_t& remat,
-                                   const strongs& input_values) {
+                                   const Tensors& input) {
+  strongs input_values;
+  std::string arg = name + "(";
+  for (const Tensor& t: input) {
+    auto ft = from_tensor(t);
+    input_values.push_back(std::get<0>(ft));
+    arg += std::get<1>(ft);
+    arg += ", ";
+  }
+  arg += ")";
+  std::string log = "(";
   Tensors ret = make_raw(remat, input_values);
-  std::string log("(");
   for (const Tensor& t: ret) {
-    log += cell_from_tensor(t)->value->name();
+    log += get_cpti(t)->counter_name();
     log += ", ";
   }
   log += ") = ";
-  log += name;
-  log += "(";
-  for (const strong& s: input_values) {
-    log += s->name();
-    log += ", ";
-  }
-  log += ")";
+  log += arg;
   DTRLog(log);
   return ret;
 }
 
 void CheckpointTensorImpl::mutate(const std::string& name,
                                   const mutate_function_t& mutate,
-                                  const Tensors& inputs) {
+                                  const Tensors& inputs,
+                                  const std::vector<size_t>& mutate_idx) {
   auto remat = [=](const Tensors& t) -> Tensors {
-                 auto t0 = t[0].clone();
                  Tensors new_input_values = t;
-                 new_input_values[0] = t0;
+                 for (size_t idx: mutate_idx) {
+                   new_input_values[idx] = t[idx].clone();
+                 }
                  mutate(new_input_values);
-                 return {t0};
+                 return new_input_values;
                };
   strongs input_values;
+  std::string log = name;
+  log += "(";
   for (const Tensor& t : inputs) {
-    input_values.push_back(from_tensor(t));
+    auto ft = from_tensor(t);
+    log += std::get<1>(ft);
+    log += ", ";
+    input_values.push_back(std::get<0>(ft));
   }
-  auto modified = make_raw(remat, input_values)[0];
-  cell_from_tensor(inputs[0])->value = cell_from_tensor(modified)->value;
+  log += ")";
+  DTRLog(log);
+  auto modified = make_raw(remat, input_values);
+  for (size_t idx: mutate_idx) {
+    cell_from_tensor(inputs[idx])->value = cell_from_tensor(modified[idx])->value;
+  }
 }
 
 }
