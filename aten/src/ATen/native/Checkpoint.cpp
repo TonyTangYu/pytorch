@@ -3,21 +3,6 @@
 
 namespace at { namespace native {
 
-Tensor checkpoint(const Tensor& t) {
-  return Tensor(intrusive_ptr<CheckpointTensorImpl>::make(t.detach()));
-}
-
-Tensor decheckpoint(const Tensor& t) {
-  auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
-  CHECK(cpti != nullptr);
-  return cpti->ref->value->t;
-}
-
-bool is_checkpoint(const Tensor& t) {
-  auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
-  return cpti != nullptr;
-}
-
 Tensor checkpoint_add(const Tensor& a, const Tensor& b, c10::Scalar c) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
