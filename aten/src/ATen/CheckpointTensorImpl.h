@@ -112,15 +112,6 @@ inline CheckpointTensorImpl* get_cpti(const Tensor& t) {
   return cpti;
 }
 
-inline std::tuple<strong, std::string> from_tensor(const Tensor& t) {
-  auto* cpt = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
-  if(cpt != nullptr) {
-    return {cpt->ref->value, cpt->counter_name()};
-  } else {
-    return from_tensor(native::checkpoint(t));
-  }
-}
-
 inline Tensor get(const strong& s) {
   return s->t;
 }
