@@ -20,6 +20,23 @@ Tensor& checkpoint_add_(Tensor& a, const Tensor& b, Scalar c) {
   return a;
 }
 
+Tensor checkpoint_mul(at::Tensor const& a, at::Tensor const& b) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::mul(vec.at(0), vec.at(1))};
+    };
+  return CheckpointTensorImpl::make("mul", rt, {a, b})[0];
+}
+
+Tensor& checkpoint_mul_(at::Tensor& a, at::Tensor const& b) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      vec.at(0).mul_(vec.at(1));
+    };
+  CheckpointTensorImpl::mutate("mul_", mt, {a, b}, {0});
+  return a;
+}
+
 Tensor checkpoint_abs(const Tensor& a) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -613,6 +630,167 @@ Tensor& checkpoint_zero_(Tensor& a) {
     };
   CheckpointTensorImpl::mutate("zero_", mt, {a}, {0});
   return a;
+}
+
+Tensor& checkpoint_squeeze_(at::Tensor& a, at::Dimname b) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      vec.at(0).squeeze_(b);
+    };
+  CheckpointTensorImpl::mutate("squeeze_", mt, {a}, {0});
+  return a;
+}
+
+Tensor& checkpoint_squeeze_(at::Tensor& a) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      vec.at(0).squeeze_();
+    };
+  CheckpointTensorImpl::mutate("squeeze_", mt, {a}, {0});
+  return a;
+}
+
+Tensor& checkpoint_squeeze_(at::Tensor& a, long b) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      vec.at(0).squeeze_(b);
+    };
+  CheckpointTensorImpl::mutate("squeeze_", mt, {a}, {0});
+  return a;
+}
+
+Tensor checkpoint_sigmoid_backward(at::Tensor const& a, at::Tensor const& b) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::sigmoid_backward(vec.at(0), vec.at(1))};
+    };
+  return CheckpointTensorImpl::make("sigmoid_backward", rt, {a, b})[0];
+}
+
+Tensor& checkpoint_sigmoid_backward_out(at::Tensor& a, at::Tensor const& b, at::Tensor const& c) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      Tensor a_ = vec.at(0);
+      at::sigmoid_backward_out(a_, vec.at(1), vec.at(2));
+    };
+  CheckpointTensorImpl::mutate("sigmoid_backward_out", mt, {a, b, c}, {0});
+  return a;
+}
+
+Tensor& checkpoint_sign_out(at::Tensor& a, at::Tensor const& b) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      Tensor a_ = vec.at(0);
+      at::sign_out(a_, vec.at(1));
+    };
+  CheckpointTensorImpl::mutate("sign_out", mt, {a, b}, {0});
+  return a;
+}
+
+Tensor checkpoint_sign(const Tensor& a) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::sign(vec.at(0))};
+    };
+  return CheckpointTensorImpl::make("sign", rt, {a})[0];
+}
+
+Tensor checkpoint_tanh(const Tensor& a) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::tanh(vec.at(0))};
+    };
+  return CheckpointTensorImpl::make("tanh", rt, {a})[0];
+}
+
+Tensor checkpoint_tanh_backward(at::Tensor const& a, at::Tensor const& b) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::tanh_backward(vec.at(0), vec.at(1))};
+    };
+  return CheckpointTensorImpl::make("tanh_backward", rt, {a, b})[0];
+}
+
+Tensor& checkpoint_tanh_backward_out(at::Tensor& a, at::Tensor const& b, at::Tensor const& c) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      Tensor a_ = vec.at(0);
+      at::tanh_backward_out(a_, vec.at(1), vec.at(2));
+    };
+  CheckpointTensorImpl::mutate("tanh_backward_out", mt, {a, b, c}, {0});
+  return a;
+}
+
+Tensor checkpoint_neg(at::Tensor const& a) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::neg(vec.at(0))};
+    };
+  return CheckpointTensorImpl::make("neg", rt, {a})[0];
+}
+
+Tensor checkpoint_sub(at::Tensor const& a, at::Tensor const& b, c10::Scalar c) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::sub(vec.at(0), vec.at(1), c)};
+    };
+  return CheckpointTensorImpl::make("sub", rt, {a, b})[0];
+}
+
+Tensor checkpoint_repeat(const at::Tensor& a, c10::ArrayRef<long> b) {
+  std::vector<long> b_ = b.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {vec.at(0).repeat(b_)};
+    };
+  return CheckpointTensorImpl::make("repeat", rt, {a})[0];
+}
+
+Tensor checkpoint__cat(c10::ArrayRef<Tensor> a, long b) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::cat(vec, b)};
+    };
+  std::vector<Tensor> s;
+  for (const Tensor& t : a) {
+    s.push_back(t);
+  }
+  return CheckpointTensorImpl::make("_cat", rt, s)[0];
+}
+
+Tensor& checkpoint__cat_out(Tensor& a, c10::ArrayRef<Tensor> b, long c) {
+  std::vector<Tensor> args;
+  args.push_back(a);
+  for (const Tensor& t : b) {
+    args.push_back(t);
+  }
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      Tensor t = vec[0];
+      at::cat_out(t, ArrayRef<Tensor>(vec.data() + 1, vec.size() - 1), c);
+    };
+  CheckpointTensorImpl::mutate("_cat_out", mt, args, {0});
+  return a;
+}
+
+Tensor checkpoint_kl_div(at::Tensor const& a, at::Tensor const& b, long c) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::kl_div(vec.at(0), vec.at(1), c)};
+    };
+  return CheckpointTensorImpl::make("kl_div", rt, {a, b})[0];
+}
+
+Tensor checkpoint_kl_div_backward(at::Tensor const& a, at::Tensor const& b, at::Tensor const& c, long d) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::kl_div_backward(vec.at(0), vec.at(1), vec.at(2), d)};
+    };
+  return CheckpointTensorImpl::make("kl_div_backward", rt, {a, b, c})[0];
+}
+
+Scalar checkpoint__local_scalar_dense(at::Tensor const& a) {
+  return at::_local_scalar_dense(decheckpoint(a));
 }
 
 }}
