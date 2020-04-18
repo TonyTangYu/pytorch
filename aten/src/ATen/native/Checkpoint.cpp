@@ -746,6 +746,23 @@ Tensor checkpoint_repeat(const at::Tensor& a, c10::ArrayRef<long> b) {
   return CheckpointTensorImpl::make("repeat", rt, {a})[0];
 }
 
+Tensor checkpoint_mean(const Tensor& self, c10::optional<c10::ScalarType> dtype) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::native::mean_cpu_gpu(vec[0], dtype)};
+  };
+  return CheckpointTensorImpl::make("mean", rt, {self})[0];
+}
+
+Tensor checkpoint_mean(const Tensor& self, IntArrayRef dim, bool keepdim, c10::optional<c10::ScalarType> dtype) {
+  std::vector<long> dim_ = dim.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::native::mean_cpu_gpu(vec[0], dim_, keepdim, dtype)};
+  };
+  return CheckpointTensorImpl::make("mean.dim", rt, {self})[0];
+}
+
 Tensor checkpoint__cat(c10::ArrayRef<Tensor> a, long b) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
