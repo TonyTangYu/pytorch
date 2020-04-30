@@ -572,9 +572,17 @@
 
 - func: binary_cross_entropy_with_logits(Tensor self, Tensor target, Tensor? weight=None, Tensor? pos_weight=None, int reduction=Mean) -> Tensor
   variants: function
+  dispatch:
+    CPU: binary_cross_entropy_with_logits
+    CUDA: binary_cross_entropy_with_logits
+    Checkpoint: checkpoint_binary_cross_entropy_with_logits
 
 - func: binary_cross_entropy_with_logits_backward(Tensor grad_output, Tensor self, Tensor target, Tensor? weight=None, Tensor? pos_weight=None, int reduction=Mean) -> Tensor
   variants: function
+  dispatch:
+    CPU: binary_cross_entropy_with_logits_backward
+    CUDA: binary_cross_entropy_with_logits_backward
+    Checkpoint: checkpoint_binary_cross_entropy_with_logits_backward
 
 - func: bincount(Tensor self, Tensor? weights=None, int minlength=0) -> Tensor
   variants: function, method
@@ -761,12 +769,14 @@
   dispatch:
     CPU: _clamp_min__cpu
     CUDA: _clamp_min__cuda
+    Checkpoint: checkpoint_clamp_min_
 
 - func: clamp_min.out(Tensor self, Scalar min, *, Tensor(a!) out) -> Tensor(a!)
   supports_named_tensor: True
   dispatch:
     CPU: _clamp_min_out_cpu
     CUDA: _clamp_min_out_cuda
+    Checkpoint: checkpoint_clamp_min__out
 
 - func: cudnn_is_acceptable(Tensor self) -> bool
   use_c10_dispatcher: full
@@ -3282,6 +3292,7 @@
   dispatch:
     CPU: sub_
     CUDA: sub_
+    Checkpoint: checkpoint_sub_
     SparseCPU: sub_sparse_
     SparseCUDA: sub_sparse_
   supports_named_tensor: True
@@ -6293,6 +6304,7 @@
   dispatch:
     CPU: upsample_bilinear2d_out_cpu
     CUDA: upsample_bilinear2d_out_cuda
+    Checkpoint: checkpoint_upsample_bilinear2d_out
 
 - func: upsample_bilinear2d(Tensor self, int[2] output_size, bool align_corners, float? scales_h=None, float? scales_w=None) -> Tensor
   python_module: nn
@@ -6300,18 +6312,21 @@
     CPU: upsample_bilinear2d_cpu
     CUDA: upsample_bilinear2d_cuda
     QuantizedCPU: quantized_upsample_bilinear2d_cpu
+    Checkpoint: checkpoint_upsample_bilinear2d
 
 - func: upsample_bilinear2d_backward.grad_input(Tensor grad_output, int[2] output_size, int[4] input_size, bool align_corners, float? scales_h=None, float? scales_w=None, *, Tensor(a!) grad_input) -> Tensor(a!)
   python_module: nn
   dispatch:
     CPU: upsample_bilinear2d_backward_out_cpu
     CUDA: upsample_bilinear2d_backward_out_cuda
+    Checkpoint: checkpoint_upsample_bilinear2d_backward_out
 
 - func: upsample_bilinear2d_backward(Tensor grad_output, int[2] output_size, int[4] input_size, bool align_corners, float? scales_h=None, float? scales_w=None) -> Tensor
   python_module: nn
   dispatch:
     CPU: upsample_bilinear2d_backward_cpu
     CUDA: upsample_bilinear2d_backward_cuda
+    Checkpoint: checkpoint_upsample_bilinear2d_backward
 
 - func: upsample_bicubic2d.out(Tensor self, int[2] output_size, bool align_corners, float? scales_h=None, float? scales_w=None, *, Tensor(a!) out) -> Tensor(a!)
   python_module: nn
