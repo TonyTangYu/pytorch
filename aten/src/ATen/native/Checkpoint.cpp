@@ -737,6 +737,17 @@ Tensor checkpoint_sub(at::Tensor const& a, at::Tensor const& b, c10::Scalar c) {
   return CheckpointTensorImpl::make("sub", rt, {a, b})[0];
 }
 
+Tensor& checkpoint_sub_(at::Tensor& a, at::Tensor const& b, c10::Scalar c) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor self = vec.at(0);
+    self.sub_(vec.at(1), c);
+  };
+  CheckpointTensorImpl::mutate("sub_", mt, {a, b}, {0});
+  return a;
+}
+
+
 Tensor checkpoint_repeat(const at::Tensor& a, c10::ArrayRef<long> b) {
   std::vector<long> b_ = b.vec();
   rematerialize_function_t rt =
@@ -804,6 +815,84 @@ Tensor checkpoint_kl_div_backward(at::Tensor const& a, at::Tensor const& b, at::
       return {at::kl_div_backward(vec.at(0), vec.at(1), vec.at(2), d)};
     };
   return CheckpointTensorImpl::make("kl_div_backward", rt, {a, b, c})[0];
+}
+
+Tensor checkpoint_upsample_bilinear2d(at::Tensor const& self, c10::ArrayRef<long> output_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w) {
+  std::vector<long> output_size_ = output_size.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::upsample_bilinear2d(vec.at(0), output_size_, align_corners, scales_h, scales_w)};
+  };
+  return CheckpointTensorImpl::make("upsample_bilinear2d", rt, {self})[0];
+}
+
+Tensor& checkpoint_upsample_bilinear2d_out(at::Tensor& out, const at::Tensor& self, c10::ArrayRef<long> output_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w) {
+  std::vector<long> output_size_ = output_size.vec();
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor out = vec.at(0);
+    at::upsample_bilinear2d_out(out, vec.at(1), output_size_, align_corners, scales_h, scales_w);
+  };
+  CheckpointTensorImpl::mutate("binary_cross_entropy_out", mt, {out, self}, {0});
+  return out;
+}
+
+Tensor& checkpoint_upsample_bilinear2d_backward_out(at::Tensor& grad_input, const at::Tensor& grad_output, c10::ArrayRef<long> output_size, c10::ArrayRef<long> input_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w) {
+  std::vector<long> output_size_ = output_size.vec();
+  std::vector<long> input_size_ = input_size.vec();
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor grad_input = vec.at(0);
+    at::upsample_bilinear2d_backward_out(grad_input, vec.at(1), output_size_, input_size_, align_corners, scales_h, scales_w);
+  };
+  CheckpointTensorImpl::mutate("upsample_bilinear2d_backward_out", mt, {grad_input, grad_output}, {0});
+  return grad_input;
+}
+
+Tensor checkpoint_upsample_bilinear2d_backward(at::Tensor const& grad_output, c10::ArrayRef<long> output_size, c10::ArrayRef<long> input_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w) {
+  std::vector<long> output_size_ = output_size.vec();
+  std::vector<long> input_size_ = input_size.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::upsample_bilinear2d_backward(vec.at(0), output_size_, input_size_, align_corners, scales_h, scales_w)};
+  };
+  return CheckpointTensorImpl::make("upsample_bilinear2d_backward", rt, {grad_output})[0];
+}
+
+Tensor& checkpoint_clamp_min_(Tensor& a, Scalar min) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor self = vec.at(0);
+    at::clamp_min_(self, min);
+  };
+  CheckpointTensorImpl::mutate("clamp_min_", mt, {a}, {0});
+  return a;
+}
+
+Tensor& checkpoint_clamp_min__out(Tensor& out, const Tensor& self, Scalar min) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor out = vec.at(0);
+    at::clamp_min_out(out, vec.at(1), min);
+  };
+  CheckpointTensorImpl::mutate("clamp_min__out", mt, {out, self}, {0});
+  return out;
+}
+
+Tensor checkpoint_binary_cross_entropy_with_logits(const Tensor& input, const Tensor& target, const Tensor& weight, const Tensor& pos_weight, int64_t reduction) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::binary_cross_entropy_with_logits(vec.at(0), vec.at(1), vec.at(2), vec.at(3), reduction)};
+  };
+  return CheckpointTensorImpl::make("binary_cross_entropy_with_logits", rt, {input, target, weight, pos_weight})[0];
+}
+
+Tensor checkpoint_binary_cross_entropy_with_logits_backward(const Tensor& grad, const Tensor& input, const Tensor& target, const Tensor& weight, const Tensor& pos_weight, int64_t reduction) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::binary_cross_entropy_with_logits_backward(vec.at(0), vec.at(1), vec.at(2), vec.at(3), vec.at(4), reduction)};
+  };
+  return CheckpointTensorImpl::make("binary_cross_entropy_with_logits_backward", rt, {grad, input, target, weight, pos_weight})[0];
 }
 
 Scalar checkpoint__local_scalar_dense(at::Tensor const& a) {
