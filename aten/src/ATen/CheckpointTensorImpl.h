@@ -23,8 +23,6 @@
 
 namespace at {
 
-void DTRLog(const std::string& str);
-
 struct CAFFE2_API CheckpointTensorCell : intrusive_ptr_target {
   Tensor t;
   explicit CheckpointTensorCell(const Tensor& t) : t(t.detach()) { }
