@@ -11,7 +11,6 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include <iostream>
 
 #if defined(_MSC_VER) && _MSC_VER <= 1900
 #define __func__ __FUNCTION__
@@ -442,7 +441,6 @@ inline void deprecated_AT_ASSERTM() {}
 // Deprecated alias; this alias was deprecated for consistency with TORCH_CHECK.
 #define AT_INDEX_ERROR(...)                                                         \
   do {                                                                              \
-    gdb();                                                                          \
     ::c10::detail::deprecated_AT_INDEX_ERROR();                                     \
     C10_EXPAND_MSVC_WORKAROUND(TORCH_CHECK_INDEX(false, ::c10::str(__VA_ARGS__)));  \
   } while (false)
@@ -456,8 +454,5 @@ inline void deprecated_AT_ASSERTM() {}
     C10_EXPAND_MSVC_WORKAROUND(TORCH_WARN(__VA_ARGS__));  \
   } while (false)
 
-inline void gdb() {
-  std::cout << *static_cast<int*>(nullptr) << std::endl;
-}
 
 #endif // C10_UTIL_EXCEPTION_H_

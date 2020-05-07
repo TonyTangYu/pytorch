@@ -16,6 +16,7 @@ from . import profiler
 
 __all__ = ['Variable', 'Function', 'backward', 'grad_mode']
 
+
 def _make_grads(outputs, grads):
     new_grads = []
     for out, grad in zip(outputs, grads):
@@ -31,7 +32,7 @@ def _make_grads(outputs, grads):
             if out.requires_grad:
                 if out.numel() != 1:
                     raise RuntimeError("grad can be implicitly created only for scalar outputs")
-                new_grads.append(torch.like_ones(out))
+                new_grads.append(torch.ones_like(out, memory_format=torch.preserve_format))
             else:
                 new_grads.append(None)
         else:
@@ -79,6 +80,7 @@ def backward(tensors, grad_tensors=None, retain_graph=None, create_graph=False, 
             raise RuntimeError("'grad_tensors' and 'grad_variables' (deprecated) "
                                "arguments both passed to backward(). Please only "
                                "use 'grad_tensors'.")
+
     tensors = (tensors,) if isinstance(tensors, torch.Tensor) else tuple(tensors)
 
     if grad_tensors is None:

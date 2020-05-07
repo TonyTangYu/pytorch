@@ -450,9 +450,6 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
   }
 
   int64_t get_device() const {
-    if (!device_opt_.has_value()) {
-      gdb();
-    }
     TORCH_CHECK(
         device_opt_.has_value(),
         "tensor does not have a device");
@@ -461,9 +458,6 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
   }
 
   Device device() const {
-    if (!device_opt_.has_value()) {
-      gdb();
-    }
     TORCH_CHECK(
         device_opt_.has_value(),
         "tensor does not have a device");
@@ -577,9 +571,6 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
    */
   template <typename T>
   inline T * data() const {
-    if (!has_storage()) {
-      std::cout << *static_cast<int*>(nullptr) << std::endl;
-    }
     TORCH_CHECK(has_storage(),
         "Cannot access data pointer of Tensor that doesn't have storage");
     TORCH_CHECK(
@@ -609,9 +600,6 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
    * can be validly read from this tensor.
    */
   inline void* data() const {
-    if (!has_storage()) {
-      std::cout << *static_cast<int*>(nullptr) << std::endl;
-    }
     TORCH_CHECK(has_storage(),
         "Cannot access data pointer of Tensor that doesn't have storage");
     TORCH_CHECK(dtype_initialized(),
