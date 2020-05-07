@@ -6,6 +6,12 @@
 - func: is_checkpoint(Tensor self) -> bool
   variants: method
 
+# convert checkpointed tensor into normal tensor.
+# uncheckpoint assume the input is checkpointed and will fail otherwise.
+# decheckpoint return the input if it is not checkpointed.
+- func: uncheckpoint(Tensor self) -> Tensor
+  variants: method
+
 - func: decheckpoint(Tensor self) -> Tensor
   variants: method
 
@@ -333,6 +339,10 @@
   use_c10_dispatcher: full
   variants: function, method
   supports_named_tensor: True
+  dispatch:
+    CPU: add
+    CUDA: add
+    Checkpoint: checkpoint_add
 
 - func: add_.Scalar(Tensor(a!) self, Scalar other, Scalar alpha=1) -> Tensor(a!)
   variants: method
@@ -1681,6 +1691,10 @@
   use_c10_dispatcher: full
   supports_named_tensor: True
   variants: function, method
+  dispatch:
+    CPU: log
+    CUDA: log
+    Checkpoint: checkpoint_log
 
 - func: log_(Tensor(a!) self) -> Tensor(a!)
   supports_named_tensor: True
@@ -1691,6 +1705,7 @@
   dispatch:
     CPU: log_out
     CUDA: log_out
+    Checkpoint: checkpoint_log_out
 
 - func: log10(Tensor self) -> Tensor
   use_c10_dispatcher: full
@@ -2076,9 +2091,20 @@
 - func: mul.Scalar(Tensor self, Scalar other) -> Tensor
   use_c10_dispatcher: full
   variants: function, method
+  dispatch:
+    CPU: mul
+    CUDA: mul
+    SparseCPU: mul
+    SparseCUDA: mul
+    MkldnnCPU: mul
+    Checkpoint: checkpoint_mul
 
 - func: mul_.Scalar(Tensor(a!) self, Scalar other) -> Tensor(a!)
   variants: method
+  dispatch:
+    CPU: mul_
+    CUDA: mul_
+    Checkpoint: checkpoint_mul_
 
 - func: mv(Tensor self, Tensor vec) -> Tensor
   use_c10_dispatcher: full
@@ -2188,6 +2214,10 @@
 
 - func: ones_like(Tensor self, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None, MemoryFormat? memory_format=None) -> Tensor
   supports_named_tensor: True
+  dispatch:
+    CPU: ones_like
+    CUDA: ones_like
+    Checkpoint: checkpoint_ones_like
 
 - func: pairwise_distance(Tensor x1, Tensor x2, float p=2, float eps=1e-06, bool keepdim=False) -> Tensor
   use_c10_dispatcher: full
@@ -2764,6 +2794,10 @@
   use_c10_dispatcher: full
   supports_named_tensor: True
   variants: function, method
+  dispatch:
+    CPU: sqrt
+    CUDA: sqrt
+    Checkpoint: checkpoint_sqrt
 
 - func: sqrt_(Tensor(a!) self) -> Tensor(a!)
   supports_named_tensor: True
@@ -2835,6 +2869,10 @@
   device_guard: False
   variants: function, method
   supports_named_tensor: True
+  dispatch:
+    CPU: t
+    CUDA: t
+    Checkpoint: checkpoint_t
 
 - func: t_(Tensor(a!) self) -> Tensor(a!)
   device_guard: False
@@ -3086,6 +3124,10 @@
 - func: where.self(Tensor condition, Tensor self, Tensor other) -> Tensor
   use_c10_dispatcher: full
   variants: function, method
+  dispatch:
+    CPU: where
+    CUDA: where
+    Checkpoint: checkpoint_where
 
 - func: where(Tensor condition) -> Tensor[]
   variants: function
@@ -3125,6 +3167,10 @@
 
 - func: zeros_like(Tensor self, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None, MemoryFormat? memory_format=None) -> Tensor
   supports_named_tensor: True
+  dispatch:
+    CPU: zeros_like
+    CUDA: zeros_like
+    Checkpoint: checkpoint_zeros_like
 
 - func: _standard_gamma_grad(Tensor self, Tensor output) -> Tensor
   use_c10_dispatcher: full
@@ -3239,6 +3285,7 @@
     SparseCUDA: clone_sparse
     MkldnnCPU: mkldnn_clone
     QuantizedCPU: quantized_clone
+    Checkpoint: checkpoint_clone
   supports_named_tensor: True
 
 - func: resize_as_(Tensor(a!) self, Tensor the_template, *, MemoryFormat? memory_format=None) -> Tensor(a!)
@@ -3318,12 +3365,24 @@
   use_c10_dispatcher: full
   variants: function
   supports_named_tensor: True
+  dispatch:
+    CPU: rsub
+    CUDA: rsub
+    SparseCPU: rsub
+    SparseCUDA: rsub
+    Checkpoint: checkpoint_rsub
 
 # For C++ only, until we have conversion from C++ numbers to Tensor
 - func: rsub.Scalar(Tensor self, Scalar other, Scalar alpha=1) -> Tensor
   use_c10_dispatcher: full
   variants: function
   supports_named_tensor: True
+  dispatch:
+    CPU: rsub
+    CUDA: rsub
+    SparseCPU: rsub
+    SparseCUDA: rsub
+    Checkpoint: checkpoint_rsub
 
 # Functionally the same as addmm, but we give it a different derivative formula
 # that doesn't propagate gradients to non-present entries on sparse.
@@ -3796,6 +3855,10 @@
   variants: method
   device_guard: False
   supports_named_tensor: True
+  dispatch:
+    CPU: to
+    CUDA: to
+    Checkpoint: checkpoint_to
 
 - func: to.device(Tensor self, Device device, ScalarType dtype, bool non_blocking=False, bool copy=False, MemoryFormat? memory_format=None) -> Tensor
   variants: method
@@ -4427,6 +4490,10 @@
 - func: addcdiv_(Tensor(a!) self, Tensor tensor1, Tensor tensor2, *, Scalar value=1) -> Tensor(a!)
   variants: method
   supports_named_tensor: True
+  dispatch:
+    CPU: addcdiv_
+    CUDA: addcdiv_
+    Checkpoint: checkpoint_addcdiv_
 
 - func: random_.from(Tensor(a!) self, int from, int? to, *, Generator? generator=None) -> Tensor(a!)
   variants: method
@@ -4805,10 +4872,18 @@
   use_c10_dispatcher: full
   variants: method, function
   supports_named_tensor: True
+  dispatch:
+    CPU: addcmul
+    CUDA: addcmul
+    Checkpoint: checkpoint_addcmul
 
 - func: addcmul_(Tensor(a!) self, Tensor tensor1, Tensor tensor2, *, Scalar value=1) -> Tensor(a!)
   variants: method
   supports_named_tensor: True
+  dispatch:
+    CPU: addcmul_
+    CUDA: addcmul_
+    Checkpoint: checkpoint_addcmul_
 
 - func: addcdiv.out(Tensor self, Tensor tensor1, Tensor tensor2, *, Scalar value=1, Tensor(a!) out) -> Tensor(a!)
   supports_named_tensor: True
@@ -4817,6 +4892,10 @@
   use_c10_dispatcher: full
   variants: method, function
   supports_named_tensor: True
+  dispatch:
+    CPU: addcdiv
+    CUDA: addcdiv
+    Checkpoint: checkpoint_addcdiv
 
 - func: lstsq.X(Tensor self, Tensor A, *, Tensor(a!) X, Tensor(b!) qr) -> (Tensor(a!) solution, Tensor(b!) QR)
   dispatch:

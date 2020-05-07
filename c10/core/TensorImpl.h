@@ -868,6 +868,9 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
    * compatible with SparseCUDATensorId.
    */
   inline bool has_compatible_shallow_copy_type(DispatchKeySet from) {
+    if (key_set_ == from) {
+      return true;
+    }
     if (key_set_.has(DispatchKey::CheckpointTensorId) || from.has(DispatchKey::CheckpointTensorId)) {
       return false;
     }
@@ -881,7 +884,7 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
              ts.has(DispatchKey::SparseCUDATensorId) ||
              ts.has(DispatchKey::SparseHIPTensorId);
     };
-    return (key_set_ == from) || (is_dense(key_set_) && is_dense(from)) || (is_sparse(key_set_) && is_sparse(from));
+    return (is_dense(key_set_) && is_dense(from)) || (is_sparse(key_set_) && is_sparse(from));
   }
 
   /**

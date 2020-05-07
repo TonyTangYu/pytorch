@@ -1,5 +1,6 @@
 import torch
 torch.annotate_log("hello")
-torch.annotate_log("hello again")
-torch.new_log("new")
-torch.annotate_log("again")
+x = torch.Tensor([1]).checkpoint()
+y = torch.Tensor([2]).checkpoint()
+z = x + y
+x.data = z

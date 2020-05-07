@@ -30,7 +30,7 @@ struct DTRLogger {
 static DTRLogger logger;
 
 using json = nlohmann::json;
-bool log_json = true;
+constexpr bool log_json = true;
 const std::string INSTRUCTION = "INSTRUCTION";
 const std::string ANNOTATION = "ANNOTATION";
 const std::string RELEASE = "RELEASE";
@@ -73,10 +73,15 @@ Tensor checkpoint(const Tensor& t) {
   return Tensor(cpti);
 }
 
-Tensor decheckpoint(const Tensor& t) {
+Tensor uncheckpoint(const Tensor& t) {
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
   CHECK(cpti != nullptr);
   return cpti->ref->value->t;
+}
+
+Tensor decheckpoint(const Tensor& t) {
+  auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
+  return cpti ? cpti->ref->value->t : t;
 }
 
 bool is_checkpoint(const Tensor& t) {
@@ -95,10 +100,22 @@ void annotate_log(std::string str) {
     j[ANNOTATION] = str;
     logger.log(j.dump());
   } else {
-    logger.log(str);
+    logger.log("# " + str);
   }
 }
 
+}
+
+void DTRLogCopyFrom(const std::string& to, const std::string& from) {
+  if (log_json) {
+    json j;
+    j[INSTRUCTION] = "COPY_FROM";
+    j["DST"] = to;
+    j["SRC"] = from;
+    logger.log(j.dump());
+  } else {
+    logger.log(to + " <- " + from);
+  }
 }
 
 void DTRLogCopy(const std::string& new_name, const std::string& old_name) {
@@ -120,6 +137,14 @@ intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const Va
   return ret;
 }
 
+void CheckpointTensorImpl::shallow_copy_from(const c10::intrusive_ptr<TensorImpl>& impl) {
+  TORCH_CHECK(impl->key_set().has(DispatchKey::CheckpointTensorId));
+  auto* cpti = dynamic_cast<CheckpointTensorImpl*>(impl.get());
+  TORCH_CHECK(cpti != nullptr);
+  ref->value = cpti->ref->value;
+  DTRLogCopyFrom(counter_name(), cpti->counter_name());
+}
+
 int CheckpointTensorImpl::counter = 0;
 
 Tensor checkpoint_raw(const Tensor& t) {
@@ -138,7 +163,9 @@ std::tuple<Tensors, duration_t> make_raw(const rematerialize_function_t& remat,
   size_t i = 0, j = 0;
   while (i != input_values.size() || j != constants.size()) {
     if (j < constants.size() && std::get<1>(constants[j]) == input.size()) {
-      input.push_back(std::get<0>(constants[j]));
+      Tensor t = std::get<0>(constants[j]);
+      TORCH_CHECK(!t.key_set().has(DispatchKey::CheckpointTensorId));
+      input.push_back(t);
       ++j;
     }
     else {
@@ -175,7 +202,7 @@ void DTRLogCall(const std::vector<std::string>& res,
   } else {
     CHECK(constants.size() == 0); //TODO: implement.
     std::string arg = name + "(";
-    for (const auto& s : arg) {
+    for (const auto& s : args) {
       arg += s;
       arg += ", ";
     }
