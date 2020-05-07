@@ -1114,6 +1114,26 @@ std::tuple<Tensor, Tensor, Tensor, Tensor, Tensor> checkpoint__thnn_fused_gru_ce
   return {res[0], res[1], res[2], res[3], res[4]};
 }
 
+Tensor& checkpoint_bitwise_and_out(Tensor& self, const Tensor& other, const Tensor& out) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor self = vec.at(0);
+    at::bitwise_and_out(self, vec.at(1), vec.at(2));
+  };
+  CheckpointTensorImpl::mutate("bitwise_and_out", mt, {self, other, out}, {0});
+  return self;
+}
+
+Tensor& checkpoint_bitwise_and_out(Tensor& self, const Tensor& out, Scalar other) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor self = vec.at(0);
+    at::bitwise_and_out(self, vec.at(1), other);
+  };
+  CheckpointTensorImpl::mutate("bitwise_and_out", mt, {self, out}, {0});
+  return self;
+}
+
 Scalar checkpoint__local_scalar_dense(at::Tensor const& a) {
   return at::_local_scalar_dense(decheckpoint(a));
 }

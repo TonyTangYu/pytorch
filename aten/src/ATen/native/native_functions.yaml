@@ -4221,12 +4221,14 @@
   dispatch:
     CPU: bitwise_and_out
     CUDA: bitwise_and_out
+    Checkpoint: checkpoint_bitwise_and_out
 
 - func: bitwise_and.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)
   variants: function
   dispatch:
     CPU: bitwise_and_out
     CUDA: bitwise_and_out
+    Checkpoint: checkpoint_bitwise_and_out
 
 - func: bitwise_and.Scalar(Tensor self, Scalar other) -> Tensor
   variants: method, function
