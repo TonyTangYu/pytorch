@@ -895,6 +895,70 @@ Tensor checkpoint_binary_cross_entropy_with_logits_backward(const Tensor& grad, 
   return CheckpointTensorImpl::make("binary_cross_entropy_with_logits_backward", rt, {grad, input, target, weight, pos_weight})[0];
 }
 
+std::tuple<Tensor, Tensor> checkpoint__fused_dropout(const Tensor & self, double p, Generator* g) {
+  // TODO: Figure out how to properly duplicate the generator;
+  // note that the commented-out code below results in a segfault!
+  // Ref<std::shared_ptr<Generator>> gen;
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    // Generator* cur = gen.t ? gen.t.get() : g;
+    // auto newG = cur->clone();
+    // auto res = at::_fused_dropout(vec.at(0), p, cur);
+    // gen.t = newG;
+    auto res = at::_fused_dropout(vec.at(0), p);
+    return {std::get<0>(res), std::get<1>(res)};
+  };
+  auto res = CheckpointTensorImpl::make("_fused_droupout_", rt, {self});
+  return {res[0], res[1]};
+}
+
+std::tuple<Tensor, Tensor, Tensor> checkpoint__thnn_fused_lstm_cell(const Tensor& input_gates, const Tensor& hidden_gates, const Tensor& cx, const Tensor& input_bias, const Tensor& hidden_bias) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    auto res = at::_thnn_fused_lstm_cell(vec.at(0), vec.at(1), vec.at(2),
+                                         vec.at(3), vec.at(4));
+    return {std::get<0>(res), std::get<1>(res), std::get<2>(res)};
+  };
+  auto res = CheckpointTensorImpl::make("_thnn_fused_lstm_cell", rt,
+                                        {input_gates, hidden_gates, cx, input_bias, hidden_bias});
+  return {res[0], res[1], res[2]};
+}
+
+std::tuple<Tensor, Tensor, Tensor, Tensor, Tensor> checkpoint__thnn_fused_lstm_cell_backward(const Tensor& grad_hy, const Tensor& grad_cy, const Tensor& cx, const Tensor& cy, const Tensor& workspace, bool has_bias) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    auto res = at::_thnn_fused_lstm_cell_backward(vec.at(0), vec.at(1), vec.at(2), vec.at(3), vec.at(4), has_bias);
+    return {std::get<0>(res), std::get<1>(res),
+        std::get<2>(res), std::get<3>(res), std::get<4>(res)};
+  };
+  auto res = CheckpointTensorImpl::make("_thnn_fused_lstm_cell_backward", rt,
+                                        {grad_hy, grad_cy, cx, cy, workspace});
+  return {res[0], res[1], res[2], res[3], res[4]};
+}
+
+std::tuple<Tensor, Tensor> checkpoint__thnn_fused_gru_cell(const Tensor& input_gates, const Tensor& hidden_gates, const Tensor& hx, const Tensor& input_bias, const Tensor& hidden_bias) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    auto res = at::_thnn_fused_gru_cell(vec.at(0), vec.at(1), vec.at(2), vec.at(3), vec.at(4));
+    return {std::get<0>(res), std::get<1>(res)};
+  };
+  auto res = CheckpointTensorImpl::make("_thnn_fused_gru_cell", rt,
+                                        {input_gates, hidden_gates, hx, input_bias, hidden_bias});
+  return {res[0], res[1]};
+}
+
+std::tuple<Tensor, Tensor, Tensor, Tensor, Tensor> checkpoint__thnn_fused_gru_cell_backward(const Tensor& grad_hy, const Tensor& workspace, bool has_bias) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    auto res = at::_thnn_fused_gru_cell_backward(vec.at(0), vec.at(1), has_bias);
+    return {std::get<0>(res), std::get<1>(res),
+        std::get<2>(res), std::get<3>(res), std::get<4>(res)};
+  };
+  auto res = CheckpointTensorImpl::make("_thnn_fused_gru_cell_backward", rt,
+                                        {grad_hy, workspace});
+  return {res[0], res[1], res[2], res[3], res[4]};
+}
+
 Scalar checkpoint__local_scalar_dense(at::Tensor const& a) {
   return at::_local_scalar_dense(decheckpoint(a));
 }
