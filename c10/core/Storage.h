@@ -125,7 +125,6 @@ struct C10_API Storage {
   }
 
   at::Device device() const {
-    //TORCH_CHECK(storage_impl_.defined());
     return storage_impl_->device();
   }
 

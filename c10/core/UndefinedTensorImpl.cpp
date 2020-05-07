@@ -20,12 +20,7 @@ int64_t UndefinedTensorImpl::stride(int64_t d) const {
   AT_ERROR("stride(dim) called on an undefined Tensor");
 }
 
-inline void gdb() {
-  std::cout << *static_cast<int*>(nullptr) << std::endl;
-}
-
 int64_t UndefinedTensorImpl::dim() const {
-  gdb();
   AT_ERROR("dim() called on undefined Tensor");
 }
 
