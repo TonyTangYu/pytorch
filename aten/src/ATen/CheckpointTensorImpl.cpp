@@ -37,6 +37,7 @@ const std::string RELEASE = "RELEASE";
 const std::string TIME = "TIME";
 const std::string ARGS = "ARGS";
 const std::string MEMORY = "MEMORY";
+const std::string ALIAS = "ALIAS";
 const std::string NAME = "NAME";
 const std::string CONSTANT = "CONSTANT";
 const std::string CONSTANTS = "CONSTANTS";
@@ -104,6 +105,18 @@ void annotate_log(std::string str) {
   }
 }
 
+}
+
+void DTRLogAlias(const std::string& name, int index) {
+  if (log_json) {
+    json j;
+    j[INSTRUCTION] = ALIAS;
+    j[NAME] = name;
+    j[ALIAS] = std::to_string(index);
+    logger.log(j.dump());
+  } else {
+    logger.log(name + " " + ALIAS + ": " + std::to_string(index));
+  }
 }
 
 void DTRLogCopyFrom(const std::string& to, const std::string& from) {
@@ -220,6 +233,22 @@ void DTRLogCall(const std::vector<std::string>& res,
   }
 }
 
+// return an index for alias.
+// we dont care which one because they all lead to the same alias pool.
+// return -1 for no alias.
+// may god forgive my sin.
+int get_alias(const Tensors& ts, const Tensor& t) {
+  if (t.defined()) {
+    for (size_t i = 0; i < ts.size(); ++i) {
+      Tensor tsd = ts[i].decheckpoint();
+      if (tsd.defined() && t.is_alias_of(tsd)) {
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+
 Tensors CheckpointTensorImpl::make(const std::string& name,
                                    const rematerialize_function_t& remat,
                                    const Tensors& input) {
@@ -250,6 +279,7 @@ Tensors CheckpointTensorImpl::make(const std::string& name,
   for (const Tensor& t: tensors) {
     auto cpti = get_cpti(t);
     DTRLogMemory(cpti->counter_name(), cpti->ref->value->memory());
+    DTRLogAlias(cpti->counter_name(), get_alias(input, cpti->ref->value->t));
   }
   return tensors;
 }
