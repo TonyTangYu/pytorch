@@ -1358,10 +1358,18 @@
 - func: fill_.Scalar(Tensor(a!) self, Scalar value) -> Tensor(a!)
   supports_named_tensor: True
   variants: function, method
+  dispatch:
+    CPU: fill_
+    CUDA: fill_
+    Checkpoint: checkpoint_fill_
 
 - func: fill_.Tensor(Tensor(a!) self, Tensor value) -> Tensor(a!)
   supports_named_tensor: True
   variants: function, method
+  dispatch:
+    CPU: fill_
+    CUDA: fill_
+    Checkpoint: checkpoint_fill_
 
 - func: floor(Tensor self) -> Tensor
   use_c10_dispatcher: full
@@ -1506,6 +1514,10 @@
 
 - func: index.Tensor(Tensor self, Tensor?[] indices) -> Tensor
   variants: function, method
+  dispatch:
+    CPU: index
+    CUDA: index
+    Checkpoint: checkpoint_index
   # NB: This function is special-cased in tools/autograd/gen_variable_type.py
   # NB: The following functions are declared in aten/src/ATen/templates/TensorBody.h and defined in aten/src/ATen/TensorIndexing.cpp:
   # - Tensor Tensor::index(ArrayRef<TensorIndex> indices)
@@ -1526,6 +1538,10 @@
 
 - func: index_put_(Tensor(a!) self, Tensor?[] indices, Tensor values, bool accumulate=False) -> Tensor(a!)
   variants: function, method
+  dispatch:
+    CPU: index_put_
+    CUDA: index_put_
+    Checkpoint: checkpoint_index_put_
   # NB: The following functions are declared in aten/src/ATen/templates/TensorBody.h and defined in aten/src/ATen/TensorIndexing.cpp:
   # - Tensor & Tensor::index_put_(ArrayRef<TensorIndex> indices, Tensor const & rhs)
   # - Tensor & Tensor::index_put_(ArrayRef<TensorIndex> indices, Scalar v)
@@ -4822,6 +4838,7 @@
   dispatch:
     CPU: masked_select_out_cpu
     CUDA: masked_select_out_cuda
+    Checkpoint: checkpoint_masked_select_out
   supports_named_tensor: True
 
 - func: masked_select(Tensor self, Tensor mask) -> Tensor
@@ -4830,6 +4847,7 @@
   dispatch:
     CPU: masked_select_cpu
     CUDA: masked_select_cuda
+    Checkpoint: checkpoint_masked_select
   supports_named_tensor: True
 
 - func: nonzero.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)

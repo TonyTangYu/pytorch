@@ -1134,6 +1134,75 @@ Tensor& checkpoint_bitwise_and_out(Tensor& self, const Tensor& out, Scalar other
   return self;
 }
 
+Tensor& checkpoint_fill_(Tensor& self, const Tensor& value) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor self = vec.at(0);
+    at::fill_(self, vec.at(1));
+  };
+  CheckpointTensorImpl::mutate("fill_", mt, {self, value}, {0});
+  return self;
+}
+
+Tensor& checkpoint_fill_(Tensor& self, Scalar value) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor self = vec.at(0);
+    at::fill_(self, value);
+  };
+  CheckpointTensorImpl::mutate("fill_", mt, {self}, {0});
+  return self;
+}
+
+Tensor& checkpoint_masked_select_out(Tensor& self, const Tensor& mask, const Tensor& out) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor self = vec.at(0);
+    at::masked_select_out(self, vec.at(1), vec.at(2));
+  };
+  CheckpointTensorImpl::mutate("masked_select_out", mt, {self, mask, out}, {0});
+  return self;
+}
+
+Tensor checkpoint_masked_select(const Tensor& self, const Tensor& mask) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::masked_select(vec.at(0), vec.at(1))};
+  };
+  return CheckpointTensorImpl::make("masked_select", rt, {self, mask})[0];
+}
+
+Tensor checkpoint_index(const Tensor& self, ArrayRef<Tensor> indices) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    auto self = vec.at(0);
+    auto indices = std::vector<Tensor>(vec.begin() + 1, vec.end());
+    return {at::index(self, indices)};
+  };
+
+  std::vector<Tensor> s = {self};
+  for (const Tensor& t: indices) {
+    s.push_back(t);
+  }
+  return CheckpointTensorImpl::make("index", rt, s)[0];
+}
+
+Tensor& checkpoint_index_put_(Tensor& self, ArrayRef<Tensor> indices, const Tensor& values, const bool accumulate) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor self = vec.at(0);
+    auto values = vec.at(1);
+    auto indices = std::vector<Tensor>(vec.begin() + 2, vec.end());
+    at::index_put_(self, indices, values, accumulate);
+  };
+  std::vector<Tensor> s = {self, values};
+  for (const Tensor& t: indices) {
+    s.push_back(t);
+  }
+  CheckpointTensorImpl::mutate("index_put_", mt, s, {0});
+  return self;
+}
+
 Scalar checkpoint__local_scalar_dense(at::Tensor const& a) {
   return at::_local_scalar_dense(decheckpoint(a));
 }
