@@ -688,6 +688,7 @@
   dispatch:
     CPU: bmm_cpu
     CUDA: bmm_cuda
+    Checkpoint: checkpoint_bmm
   supports_named_tensor: True
 
 - func: bmm.out(Tensor self, Tensor mat2, *, Tensor(a!) out) -> Tensor(a!)
@@ -1657,11 +1658,13 @@
   dispatch:
     CPU: layer_norm_cpu
     CUDA: layer_norm_cuda
+    Checkpoint: checkpoint_layer_norm
 
 - func: native_layer_norm_backward(Tensor grad_out, Tensor input, Tensor mean, Tensor rstd, Tensor? weight, int M, int N, bool[3] output_mask) -> (Tensor, Tensor, Tensor)
   dispatch:
     CPU: layer_norm_backward_cpu
     CUDA: layer_norm_backward_cuda
+    Checkpoint: checkpoint_layer_norm_backward
 
 - func: linear(Tensor input, Tensor weight, Tensor? bias=None) -> Tensor
   python_module: nn
@@ -2687,12 +2690,14 @@
     CPU: softmax_cpu
     CUDA: softmax_cuda
     MkldnnCPU: mkldnn_softmax
+    Checkpoint: checkpoint__softmax
 
 - func: _softmax_backward_data(Tensor grad_output, Tensor output, int dim, Tensor self) -> Tensor
   use_c10_dispatcher: full
   dispatch:
     CPU: softmax_backward_cpu
     CUDA: softmax_backward_cuda
+    Checkpoint: checkpoint__softmax_backward_data
 
 - func: split.Tensor(Tensor(a) self, int split_size, int dim=0) -> Tensor(a)[]
   variants: function, method
@@ -5387,6 +5392,7 @@
     CPU: legacy::cpu::_th_equal
     CUDA: legacy::cuda::_th_equal
     QuantizedCPU: quantized_equal
+    Checkpoint: checkpoint_equal
   supports_named_tensor: True
 
 - func: pow.Tensor_Tensor_out(Tensor self, Tensor exponent, *, Tensor(a!) out) -> Tensor(a!)

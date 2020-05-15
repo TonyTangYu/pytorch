@@ -1203,6 +1203,58 @@ Tensor& checkpoint_index_put_(Tensor& self, ArrayRef<Tensor> indices, const Tens
   return self;
 }
 
+Tensor checkpoint_bmm(const Tensor& self, const Tensor& mat2) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::bmm(vec.at(0), vec.at(1))};
+  };
+  return CheckpointTensorImpl::make("bmm", rt, {self, mat2})[0];
+}
+
+Tensor checkpoint__softmax(const Tensor& self, long dim, bool half_to_float) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::_softmax(vec.at(0), dim, half_to_float)};
+  };
+  return CheckpointTensorImpl::make("_softmax", rt, {self})[0];
+}
+
+Tensor checkpoint__softmax_backward_data(const Tensor& grad_output, const Tensor& output, long dim, const Tensor& self) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::_softmax_backward_data(vec.at(0), vec.at(1), dim, vec.at(2))};
+  };
+  return CheckpointTensorImpl::make("_softmax_backward_data", rt, {grad_output, output, self})[0];
+}
+
+std::tuple<Tensor, Tensor, Tensor>
+checkpoint_layer_norm(const Tensor& input, const Tensor& weight, const Tensor& bias, long M, long N, double eps) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    auto ret = at::native_layer_norm(vec.at(0), vec.at(1), vec.at(2), M, N, eps);
+    return {std::get<0>(ret), std::get<1>(ret), std::get<2>(ret)};
+  };
+  auto ret = CheckpointTensorImpl::make("native_layer_norm", rt, {input, weight, bias});
+  return {ret[0], ret[1], ret[2]};
+}
+
+std::tuple<Tensor, Tensor, Tensor>
+checkpoint_layer_norm_backward(const Tensor& grad_out, const Tensor& input, const Tensor& mean, const Tensor& rstd, const Tensor& weight, long M, long N, std::array<bool, 3ul> output_mask) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    auto ret = at::native_layer_norm_backward(vec.at(0), vec.at(1), vec.at(2), vec.at(3), vec.at(4), M, N, output_mask);
+    return {std::get<0>(ret), std::get<1>(ret), std::get<2>(ret)};
+  };
+  auto ret = CheckpointTensorImpl::make("native_layer_norm_backward", rt, {grad_out, input, mean, rstd, weight});
+  return {ret[0], ret[1], ret[2]};
+}
+
+bool checkpoint_equal(const Tensor& self, const Tensor& other) {
+  // there can't possibly be a reason to rematerialize
+  // a single bool so we'll just compute it now
+  return at::equal(decheckpoint(self), decheckpoint(other));
+}
+
 Scalar checkpoint__local_scalar_dense(at::Tensor const& a) {
   return at::_local_scalar_dense(decheckpoint(a));
 }
