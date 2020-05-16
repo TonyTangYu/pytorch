@@ -1249,6 +1249,29 @@ checkpoint_layer_norm_backward(const Tensor& grad_out, const Tensor& input, cons
   return {ret[0], ret[1], ret[2]};
 }
 
+std::tuple<Tensor, Tensor>
+checkpoint_topk(const Tensor& self, long k, long dim, bool largest, bool sorted) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    auto ret = at::topk(vec.at(0), k, dim, largest, sorted);
+    return {std::get<0>(ret), std::get<1>(ret)};
+  };
+  auto ret = CheckpointTensorImpl::make("topk", rt, {self});
+  return {ret[0], ret[1]};
+}
+
+std::tuple<Tensor&, Tensor&>
+checkpoint_topk_values(Tensor& values, Tensor& indices, const Tensor& self, long k, long dim, bool largest, bool sorted) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor values_ = vec.at(0);
+    Tensor indices_ = vec.at(1);
+    at::topk_out(values_, indices_, vec.at(2), k, dim, largest, sorted);
+  };
+  CheckpointTensorImpl::mutate("topk_values", mt, {values, indices, self}, {0, 1});
+  return {values, indices};
+}
+
 bool checkpoint_equal(const Tensor& self, const Tensor& other) {
   // there can't possibly be a reason to rematerialize
   // a single bool so we'll just compute it now
