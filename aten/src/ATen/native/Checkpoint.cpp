@@ -1272,6 +1272,198 @@ checkpoint_topk_values(Tensor& values, Tensor& indices, const Tensor& self, long
   return {values, indices};
 }
 
+Tensor& checkpoint_masked_fill_(Tensor& self, const Tensor& mask, Scalar value) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor self_ = vec.at(0);
+    self_.masked_fill_(vec.at(1), value);
+  };
+  CheckpointTensorImpl::mutate("masked_fill_Scalar", mt, {self, mask}, {0});
+  return {self};
+}
+
+Tensor& checkpoint_masked_fill_(Tensor& self, const Tensor& mask, const Tensor& value) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor self_ = vec.at(0);
+    self_.masked_fill_(vec.at(1), vec.at(2));
+  };
+  CheckpointTensorImpl::mutate("masked_fill_Tensor", mt, {self, mask, value}, {0});
+  return {self};
+}
+
+Tensor checkpoint_clamp(const Tensor& self, c10::optional<Scalar> min, c10::optional<Scalar> max) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::clamp(vec.at(0), min, max)};
+  };
+  return CheckpointTensorImpl::make("clamp", rt, {self})[0];
+}
+
+Tensor& checkpoint_clamp_(Tensor& self, c10::optional<Scalar> min, c10::optional<Scalar> max) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor self_ = vec.at(0);
+    at::clamp_(self_, min, max);
+  };
+  CheckpointTensorImpl::mutate("clamp_", mt, {self}, {0});
+  return {self};
+}
+
+Tensor& checkpoint_clamp_out(Tensor& out, const Tensor& self, c10::optional<Scalar> min, c10::optional<Scalar> max) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor out_ = vec.at(0);
+    at::clamp_out(out_, vec.at(1), min, max);
+  };
+  CheckpointTensorImpl::mutate("clamp_out", mt, {out, self}, {0});
+  return {out};
+}
+
+std::tuple<Tensor&, Tensor&, Tensor&> checkpoint_thnn_conv2d_forward_out(Tensor& output, Tensor& finput, Tensor& fgrad_input, const Tensor& self, const Tensor& weight, c10::ArrayRef<long> kernel_size, const Tensor& bias, c10::ArrayRef<long> stride, c10::ArrayRef<long> padding) {
+  auto kernel_size_ = kernel_size.vec();
+  auto stride_ = stride.vec();
+  auto padding_ = padding.vec();
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor output_ = vec.at(0);
+    Tensor finput_ = vec.at(1);
+    Tensor fgrad_input_ = vec.at(2);
+    at::thnn_conv2d_forward_out(output_, finput_, fgrad_input_, vec.at(3), vec.at(4), kernel_size_, vec.at(5), stride_, padding_);
+  };
+  CheckpointTensorImpl::mutate("thnn_conv2d_forward_out", mt, {output, finput, fgrad_input, self, weight, bias}, {0, 1, 2});
+  return {output, finput, fgrad_input};
+}
+
+std::tuple<Tensor, Tensor, Tensor> checkpoint_thnn_conv2d_forward(const Tensor& self, const Tensor& weight, c10::ArrayRef<long> kernel_size, const Tensor& bias, c10::ArrayRef<long> stride, c10::ArrayRef<long> padding) {
+  auto kernel_size_ = kernel_size.vec();
+  auto stride_ = stride.vec();
+  auto padding_ = padding.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    auto ret = at::thnn_conv2d_forward(vec.at(0), vec.at(1), kernel_size_, vec.at(2), stride_, padding_);
+    return {std::get<0>(ret), std::get<1>(ret), std::get<2>(ret)};
+  };
+  auto ret = CheckpointTensorImpl::make("thnn_conv2d_forward", rt, {self, weight, bias});
+  return {ret[0], ret[1], ret[2]};
+}
+
+std::tuple<Tensor&, Tensor&, Tensor&> checkpoint_thnn_conv2d_backward_out(Tensor& grad_input, Tensor& grad_weight, Tensor& grad_bias, const Tensor& grad_output, const Tensor& self, const Tensor& weight, c10::ArrayRef<long> kernel_size, c10::ArrayRef<long> stride, c10::ArrayRef<long> padding, const Tensor& finput, const Tensor& fgrad_input) {
+  auto kernel_size_ = kernel_size.vec();
+  auto stride_ = stride.vec();
+  auto padding_ = padding.vec();
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor grad_input_ = vec.at(0);
+    Tensor grad_weight_ = vec.at(1);
+    Tensor grad_bias_ = vec.at(2);
+    at::thnn_conv2d_backward_out(grad_input_, grad_weight_, grad_bias_, vec.at(3), vec.at(4), vec.at(5), kernel_size_, stride_, padding_, vec.at(6), vec.at(7));
+  };
+  CheckpointTensorImpl::mutate("thnn_conv2d_backward_out", mt, {grad_input, grad_weight, grad_bias, grad_output, self, weight, finput, fgrad_input}, {0, 1, 2});
+  return {grad_input, grad_weight, grad_bias};
+}
+
+std::tuple<Tensor, Tensor, Tensor> checkpoint_thnn_conv2d_backward(const Tensor& grad_output, const Tensor& self, const Tensor& weight, c10::ArrayRef<long> kernel_size, c10::ArrayRef<long> stride, c10::ArrayRef<long> padding, const Tensor& finput, const Tensor& fgrad_input, std::array<bool, 3ul> output_mask) {
+  auto kernel_size_ = kernel_size.vec();
+  auto stride_ = stride.vec();
+  auto padding_ = padding.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    auto ret = at::thnn_conv2d_backward(vec.at(0), vec.at(1), vec.at(2), kernel_size_, stride_, padding_, vec.at(3), vec.at(4), output_mask);
+    return {std::get<0>(ret), std::get<1>(ret), std::get<2>(ret)};
+  };
+  auto ret = CheckpointTensorImpl::make("thnn_conv2d_backward", rt, {grad_output, self, weight, finput, fgrad_input});
+  return {ret[0], ret[1], ret[2]};
+}
+
+std::tuple<Tensor, Tensor, Tensor> checkpoint_native_batch_norm(const Tensor& input, const Tensor& weight, const Tensor& bias, const Tensor& running_mean, const Tensor& running_var, bool training, double momentum, double eps) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    auto ret = at::native_batch_norm(vec.at(0), vec.at(1), vec.at(2), vec.at(3), vec.at(4), training, momentum, eps);
+    return {std::get<0>(ret), std::get<1>(ret), std::get<2>(ret)};
+  };
+  auto ret = CheckpointTensorImpl::make("native_batch_norm", rt, {input, weight, bias, running_mean, running_var});
+  return {ret[0], ret[1], ret[2]};
+}
+
+std::tuple<Tensor&, Tensor&, Tensor&> checkpoint_native_batch_norm_out(Tensor& out, Tensor& save_mean, Tensor& save_invstd, const Tensor& input, const Tensor& weight, const Tensor& bias, const Tensor& running_mean, const Tensor& running_var, bool training, double momentum, double eps) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor out_ = vec.at(0);
+    Tensor save_mean_ = vec.at(1);
+    Tensor save_invstd_ = vec.at(2);
+    at::native_batch_norm_out(out_, save_mean_, save_invstd_, vec.at(3), vec.at(4), vec.at(5), vec.at(6), vec.at(7), training, momentum, eps);
+  };
+  CheckpointTensorImpl::mutate("native_batch_norm_out", mt, {out, save_mean, save_invstd, input, weight, bias, running_mean, running_var}, {0, 1, 2});
+  return {out, save_mean, save_invstd};
+}
+
+std::tuple<Tensor, Tensor, Tensor> checkpoint_native_batch_norm_backward(const Tensor& grad_out, const Tensor& input, const Tensor& weight, const Tensor& running_mean, const Tensor& running_var, const Tensor& save_mean, const Tensor& save_invstd, bool train, double eps, std::array<bool, 3ul> output_mask) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    auto ret = at::native_batch_norm_backward(vec.at(0), vec.at(1), vec.at(2), vec.at(3), vec.at(4), vec.at(5), vec.at(6), train, eps, output_mask);
+    return {std::get<0>(ret), std::get<1>(ret), std::get<2>(ret)};
+  };
+  auto ret = CheckpointTensorImpl::make("native_batch_norm_backward", rt, {grad_out, input, weight, running_mean, running_var, save_mean, save_invstd});
+  return {ret[0], ret[1], ret[2]};
+}
+
+std::tuple<Tensor, Tensor> checkpoint__cudnn_ctc_loss(const Tensor& log_probs, const Tensor& targets, ArrayRef<long> input_lengths, ArrayRef<long> target_lengths, long blank, bool deterministic, bool zero_infinity) {
+  auto input_lengths_ = input_lengths.vec();
+  auto target_lengths_ = target_lengths.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    auto ret = at::_cudnn_ctc_loss(vec.at(0), vec.at(1), input_lengths_, target_lengths_, blank, deterministic, zero_infinity);
+    return {std::get<0>(ret), std::get<1>(ret)};
+  };
+  auto ret = CheckpointTensorImpl::make("_cudnn_ctc_loss", rt, {log_probs, targets});
+  return {ret[0], ret[1]};
+}
+
+std::tuple<Tensor, Tensor> checkpoint__ctc_loss(const Tensor& log_probs, const Tensor& targets, ArrayRef<long> input_lengths, ArrayRef<long> target_lengths,  long blank, bool zero_infinity) {
+  auto input_lengths_ = input_lengths.vec();
+  auto target_lengths_ = target_lengths.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    auto ret = at::_ctc_loss(vec.at(0), vec.at(1), input_lengths_, target_lengths_, blank, zero_infinity);
+    return {std::get<0>(ret), std::get<1>(ret)};
+  };
+  auto ret = CheckpointTensorImpl::make("_ctc_loss", rt, {log_probs, targets});
+  return {ret[0], ret[1]};
+}
+
+Tensor checkpoint__ctc_loss_backward(const Tensor& grad, const Tensor& log_probs, const Tensor& targets, ArrayRef<long> input_lengths, ArrayRef<long> target_lengths, const Tensor& neg_log_likelihood, const Tensor& log_alpha, long blank, bool zero_infinity) {
+  auto input_lengths_ = input_lengths.vec();
+  auto target_lengths_ = target_lengths.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::_ctc_loss_backward(vec.at(0), vec.at(1), vec.at(2), input_lengths_, target_lengths_, vec.at(3), vec.at(4), blank, zero_infinity)};
+  };
+  return CheckpointTensorImpl::make("_ctc_loss_backward", rt, {grad, log_probs, targets, neg_log_likelihood, log_alpha})[0];
+}
+
+Tensor& checkpoint_hardtanh_backward_out(Tensor& grad_input, const Tensor& grad_output, const Tensor& self, Scalar min_val, Scalar max_val) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor grad_input_ = vec.at(0);
+    at::hardtanh_backward_out(grad_input_, vec.at(1), vec.at(2), min_val, max_val);
+  };
+  CheckpointTensorImpl::mutate("hardtanh_backward_out", mt, {grad_input, grad_output, self}, {0});
+  return {grad_input};
+}
+
+Tensor checkpoint_hardtanh_backward(const Tensor& grad_output, const Tensor& self, Scalar min_val, Scalar max_val) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::hardtanh_backward(vec.at(0), vec.at(1), min_val, max_val)};
+  };
+  return CheckpointTensorImpl::make("hardtanh_backward", rt, {grad_output, self})[0];
+}
+
+bool checkpoint__use_cudnn_ctc_loss(const Tensor& log_probs, const Tensor& targets, ArrayRef<long> input_lengths, ArrayRef<long> target_lengths, long blank) {
+  return at::_use_cudnn_ctc_loss(decheckpoint(log_probs), decheckpoint(targets), input_lengths, target_lengths, blank);
+}
+
 bool checkpoint_equal(const Tensor& self, const Tensor& other) {
   // there can't possibly be a reason to rematerialize
   // a single bool so we'll just compute it now
