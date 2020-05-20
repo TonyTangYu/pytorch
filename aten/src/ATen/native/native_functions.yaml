@@ -4794,6 +4794,7 @@
     CPU: lt_out
     CUDA: lt_out
     QuantizedCPU: lt_out_quantized_cpu
+    Checkpoint: checkpoint_lt_out
 
 - func: lt.Scalar(Tensor self, Scalar other) -> Tensor
   supports_named_tensor: True
@@ -4803,6 +4804,7 @@
     CPU: lt
     CUDA: lt
     QuantizedCPU: lt_quantized_cpu
+    Checkpoint: checkpoint_lt
 
 - func: lt.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)
   supports_named_tensor: True
@@ -4810,6 +4812,7 @@
     CPU: lt_out
     CUDA: lt_out
     QuantizedCPU: lt_out_quantized_cpu
+    Checkpoint: checkpoint_lt_out
 
 - func: lt.Tensor(Tensor self, Tensor other) -> Tensor
   supports_named_tensor: True
@@ -4819,6 +4822,7 @@
     CPU: lt
     CUDA: lt
     QuantizedCPU: lt_quantized_cpu
+    Checkpoint: checkpoint_lt
 
 - func: take.out(Tensor self, Tensor index, *, Tensor(a!) out) -> Tensor(a!)
   dispatch:
@@ -4871,6 +4875,7 @@
   dispatch:
     CPU: legacy::cpu::_th_nonzero_out
     CUDA: legacy::cuda::_th_nonzero_out
+    Checkpoint: checkpoint_nonzero_out
 
 - func: nonzero(Tensor self) -> Tensor
   use_c10_dispatcher: full
@@ -4878,6 +4883,7 @@
   dispatch:
     CPU: legacy::cpu::_th_nonzero
     CUDA: legacy::cuda::_th_nonzero
+    Checkpoint: checkpoint_nonzero
 
 - func: nonzero_numpy(Tensor self) -> Tensor[]
   variants: method, function
@@ -5379,6 +5385,7 @@
     CUDA: any
     SparseCPU: any_sparse
     SparseCUDA: any_sparse
+    Checkpoint: checkpoint_any
 
 - func: renorm.out(Tensor self, Scalar p, int dim, Scalar maxnorm, *, Tensor(a!) out) -> Tensor(a!)
   dispatch:

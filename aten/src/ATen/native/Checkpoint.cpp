@@ -1460,6 +1460,68 @@ Tensor checkpoint_hardtanh_backward(const Tensor& grad_output, const Tensor& sel
   return CheckpointTensorImpl::make("hardtanh_backward", rt, {grad_output, self})[0];
 }
 
+Tensor checkpoint_nonzero(const Tensor& self) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::nonzero(vec.at(0))};
+  };
+  return CheckpointTensorImpl::make("nonzero", rt, {self})[0];
+}
+
+Tensor& checkpoint_nonzero_out(Tensor& out, const Tensor& self) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor out_ = vec.at(0);
+    at::nonzero_out(out_, vec.at(1));
+  };
+  CheckpointTensorImpl::mutate("nonzero_out", mt, {out, self}, {0});
+  return {out};
+}
+
+Tensor checkpoint_lt(const Tensor& self, Scalar other) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::lt(vec.at(0), other)};
+  };
+  return CheckpointTensorImpl::make("lt_Scalar", rt, {self})[0];
+}
+
+Tensor& checkpoint_lt_out(Tensor& out, const Tensor& self, Scalar other) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor out_ = vec.at(0);
+    at::lt_out(out_, vec.at(1), other);
+  };
+  CheckpointTensorImpl::mutate("lt_Scalar_out", mt, {out, self}, {0});
+  return {out};
+}
+
+Tensor checkpoint_lt(const Tensor& self, const Tensor& other) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::lt(vec.at(0), vec.at(1))};
+  };
+  return CheckpointTensorImpl::make("lt_Tensor", rt, {self, other})[0];
+}
+
+Tensor& checkpoint_lt_out(Tensor& out, const Tensor& self, const Tensor& other) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+    Tensor out_ = vec.at(0);
+    at::lt_out(out_, vec.at(1), vec.at(2));
+  };
+  CheckpointTensorImpl::mutate("lt_Tensor_out", mt, {out, self, other}, {0});
+  return {out};
+}
+
+Tensor checkpoint_any(const Tensor& self) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::any(vec.at(0))};
+  };
+  return CheckpointTensorImpl::make("any", rt, {self})[0];
+}
+
 bool checkpoint__use_cudnn_ctc_loss(const Tensor& log_probs, const Tensor& targets, ArrayRef<long> input_lengths, ArrayRef<long> target_lengths, long blank) {
   return at::_use_cudnn_ctc_loss(decheckpoint(log_probs), decheckpoint(targets), input_lengths, target_lengths, blank);
 }
