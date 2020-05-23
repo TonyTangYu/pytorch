@@ -4,58 +4,6 @@
 
 namespace at {
 
-void AliasPool::evict() {
-  TORCH_CHECK(lock_count == 0);
-  for (const weak& w : tensors) {
-    if (auto cell = w.lock()) {
-      cell->evict();
-    }
-  }
-}
-
-void External::release_resources() {
-  value->evict();
-  value.reset();
-}
-
-Tensors stitch(const strongs& input_values,
-               const std::vector<std::tuple<Tensor, size_t>>& constants) {
-  Tensors input;
-  size_t i = 0, j = 0;
-  while (i != input_values.size() || j != constants.size()) {
-    if (j < constants.size() && std::get<1>(constants[j]) == input.size()) {
-      Tensor t = std::get<0>(constants[j]);
-      TORCH_CHECK(!t.key_set().has(DispatchKey::CheckpointTensorId));
-      input.push_back(t);
-      ++j;
-    }
-    else {
-      CHECK(i < input_values.size());
-      input.push_back(input_values[i]->get());
-      ++i;
-    }
-  }
-  return input;
-}
-
-void Rematerializer::remat() {
-  // TODO: refactor using RAII for exception safety.
-  for (const strong& s : input_values) {
-    ++(s->pool->lock_count);
-  }
-  Tensors ts = stitch(input_values, constants);
-  auto ret = func(ts);
-  TORCH_CHECK(ret.size() == outputs.size());
-  for (size_t i = 0; i < outputs.size(); ++i) {
-    if (auto output_cell = outputs[i].lock()) {
-      output_cell->fill(ret[i]);
-    }
-  }
-  for (const strong& s : input_values) {
-    --(s->pool->lock_count);
-  }
-}
-
 namespace native {
 
 Tensor checkpoint(const Tensor& t) {
@@ -87,6 +35,10 @@ bool is_checkpoint(const Tensor& t) {
   return cpti != nullptr;
 }
 
+Tensor try_checkpoint(const Tensor& t) {
+  return is_checkpoint(t) ? t : checkpoint(t);
+}
+
 void new_log(std::string str) {
   DTRLogger::logger().out = std::ofstream(DTRLogger::logger().get_filename(str));
 }
@@ -106,6 +58,58 @@ void clear_checkpointpool() {
   // not implemented yet.
 }
 
+}
+
+Tensor uncheckpoint(const strong& input) {
+  return input->get();
+}
+
+Tensors uncheckpoint(const strongs& inputs) {
+  Tensors ret;
+  for (const strong& input : inputs) {
+    ret.push_back(uncheckpoint(input));
+  }
+  return ret;
+};
+
+Tensors try_checkpoint(const Tensors& inputs) {
+  Tensors ret;
+  for (const Tensor& input : inputs) {
+    ret.push_back(at::native::try_checkpoint(input));
+  }
+  return ret;
+}
+
+void AliasPool::evict() {
+  TORCH_CHECK(lock_count == 0);
+  for (const weak& w : tensors) {
+    if (auto cell = w.lock()) {
+      cell->evict();
+    }
+  }
+}
+
+void External::release_resources() {
+  value->evict();
+  value.reset();
+}
+
+void Rematerializer::remat() {
+  // TODO: refactor using RAII for exception safety.
+  for (const strong& s : inputs) {
+    ++(s->pool->lock_count);
+  }
+  Tensors ts = uncheckpoint(inputs);
+  auto ret = func(ts);
+  TORCH_CHECK(ret.size() == outputs.size());
+  for (size_t i = 0; i < outputs.size(); ++i) {
+    if (auto output_cell = outputs[i].lock()) {
+      output_cell->fill(ret[i]);
+    }
+  }
+  for (const strong& s : inputs) {
+    --(s->pool->lock_count);
+  }
 }
 
 intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const VariableVersion& version_counter,
@@ -153,29 +157,23 @@ struct MakeRawResult {
 // however, we have to stitch the two vectors together to pass it in remat.
 // the size_t in constants decide the location to stitch them in, while input_values fill in the rest.
 MakeRawResult make_raw(const rematerialize_function_t& remat_f,
-                       // We need this to assign alias pool.
-                       // This is ugly as fuck but after refactoring we dont even need stitching anymore.
-                       const Tensors& raw_input,
-                       const strongs& input_values,
-                       const std::vector<std::tuple<Tensor, size_t>>& constants) {
-  Tensors inputs = stitch(input_values, constants);
+                       const strongs& inputs) {
+  Tensors raw_inputs = uncheckpoint(inputs);
   time_t pre = std::chrono::system_clock::now();
-  auto outputs_raw = remat_f(inputs);
+  auto outputs_raw = remat_f(raw_inputs);
   time_t post = std::chrono::system_clock::now();
   std::vector<intrusive_ptr<External>> outputs;
   std::vector<int> aliases;
   weaks weak_outputs;
-  auto remat = intrusive_ptr<Rematerializer>::make(Unsafe(), input_values, constants, remat_f);
+  auto remat = intrusive_ptr<Rematerializer>::make(Unsafe(), remat_f, inputs);
   for (const Tensor& t : outputs_raw) {
-    int alias = get_alias(inputs, t);
+    int alias = get_alias(raw_inputs, t);
     intrusive_ptr<AliasPool> pool;
     if (alias == -1) {
       pool = intrusive_ptr<AliasPool>::make(Unsafe(), true, memory(t));
     }
-    else if (auto* cpti = dynamic_cast<CheckpointTensorImpl*>(raw_input[alias].unsafeGetTensorImpl())) {
-      pool = cpti->ref->value->value->pool;
-    } else { // alias to an constant. unevictable.
-      pool = intrusive_ptr<AliasPool>::make(Unsafe(), false, memory(t));
+    else {
+      pool = inputs[alias]->pool;
     }
     auto e = intrusive_ptr<External>::make(t, pool, remat);
     pool->tensors.push_back(weak(e->value));
@@ -194,30 +192,24 @@ std::string from_time(duration_t t) {
 Tensors CheckpointTensorImpl::make(const std::string& name,
                                    const rematerialize_function_t& remat,
                                    const Tensors& inputs) {
+  Tensors checkpointed_inputs = try_checkpoint(inputs);
   strongs input_values;
-  std::vector<std::tuple<Tensor, size_t>> constants;
-  std::vector<size_t> constant_idx;
   std::vector<std::string> args;
-  for (const Tensor& t: inputs) {
-    if (auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl())) {
-      input_values.push_back(cpti->ref->value->value);
-      args.push_back(cpti->counter_name());
-    }
-    else {
-      size_t idx = input_values.size() + constants.size();
-      constants.push_back({t, idx});
-      constant_idx.push_back(idx);
-    }
+  for (const Tensor& t: checkpointed_inputs) {
+    auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
+    TORCH_CHECK(cpti);
+    input_values.push_back(cpti->ref->value->value);
+    args.push_back(cpti->counter_name());
   }
   std::vector<std::string> res;
-  auto ret = make_raw(remat, inputs, input_values, constants);
+  auto ret = make_raw(remat, input_values);
   Tensors tensors;
   for (const auto& t: ret.outputs) {
     auto cp = Tensor(intrusive_ptr<CheckpointTensorImpl>::make(t));
     tensors.push_back(cp);
     res.push_back(get_cpti(cp)->counter_name());
   }
-  DTRLogCall(res, name, args, constant_idx, from_time(ret.time));
+  DTRLogCall(res, name, args, from_time(ret.time));
   for (size_t i = 0; i < tensors.size(); ++i) {
     Tensor t = tensors[i];
     auto cpti = get_cpti(t);
@@ -240,27 +232,21 @@ void CheckpointTensorImpl::mutate(const std::string& name,
                  mutate(new_input_values);
                  return new_input_values;
                };
+  Tensors checkpointed_inputs = try_checkpoint(inputs);
   strongs input_values;
-  std::vector<std::tuple<Tensor, size_t>> constants;
-  std::vector<size_t> constant_idx;
   std::vector<std::string> args;
-  for (const Tensor& t: inputs) {
-    if (auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl())) {
-      input_values.push_back(cpti->ref->value->value);
-      args.push_back(cpti->counter_name());
-    }
-    else {
-      size_t idx = input_values.size() + constants.size();
-      constants.push_back({t, idx});
-      constant_idx.push_back(idx);
-    }
+  for (const Tensor& t: checkpointed_inputs) {
+    auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
+    TORCH_CHECK(cpti);
+    input_values.push_back(cpti->ref->value->value);
+    args.push_back(cpti->counter_name());
   }
-  auto ret = make_raw(remat, inputs, input_values, constants);
+  auto ret = make_raw(remat, input_values);
   const auto& modified = ret.outputs;
   for (size_t idx: mutate_idx) {
     cell_from_tensor(inputs[idx])->value = modified[idx];
   }
-  DTRLogMutate(name, args, constant_idx, mutate_idx, from_time(ret.time));
+  DTRLogMutate(name, args, mutate_idx, from_time(ret.time));
 }
 
 void CheckpointTensorImpl::release_resources() {

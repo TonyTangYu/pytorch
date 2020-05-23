@@ -45,7 +45,6 @@ const std::string MEMORY = "MEMORY";
 const std::string ALIAS = "ALIAS";
 const std::string NAME = "NAME";
 const std::string CONSTANT = "CONSTANT";
-const std::string CONSTANTS = "CONSTANTS";
 
 void DTRLogConstant(const std::string& name) {
   if (log_json) {
@@ -108,7 +107,6 @@ void DTRLogCopy(const std::string& new_name, const std::string& old_name) {
 
 void DTRLogMutate(const std::string& name,
                   const std::vector<std::string>& args,
-                  const std::vector<size_t>& constants,
                   const std::vector<size_t>& mutate,
                   const std::string& time) {
   if (log_json) {
@@ -116,12 +114,10 @@ void DTRLogMutate(const std::string& name,
     j[INSTRUCTION] = "MUTATE";
     j[NAME] = name;
     j[ARGS] = args;
-    j[CONSTANTS] = constants;
     j["MUTATE"] = mutate;
     j[TIME] = time;
     DTRLogger::logger().log(j.dump());
   } else {
-    CHECK(constants.size() == 0); //TODO: implement.
     std::string log = name;
     log += "(";
     for (const auto& s : args) {
@@ -157,7 +153,6 @@ void DTRLogRelease(const std::string& counter_name) {
 void DTRLogCall(const std::vector<std::string>& res,
                 const std::string& name,
                 const std::vector<std::string>& args,
-                const std::vector<size_t>& constants,
                 const std::string& time) {
   if (log_json) {
     json j;
@@ -165,11 +160,9 @@ void DTRLogCall(const std::vector<std::string>& res,
     j[NAME] = name;
     j["RESULT"] = res;
     j[ARGS] = args;
-    j[CONSTANTS] = constants;
     j[TIME] = time;
     DTRLogger::logger().log(j.dump());
   } else {
-    CHECK(constants.size() == 0); //TODO: implement.
     std::string arg = name + "(";
     for (const auto& s : args) {
       arg += s;

@@ -138,34 +138,18 @@ struct AliasPool : intrusive_ptr_target {
 // To build the cycle remat support a default constructor,
 // And allow you to fill in the member later.
 struct Rematerializer : intrusive_ptr_target {
-  // I am trying to represent a list of either checkpointedtensor or rawtensor.
-  // Is stitch the best way to do this?
-  // Maybe another approach is to use a list of tensor, and do dynamic downcasting?
-  // WHY DONT WE SIMPLY MAKE ALL CONSTANTS CHECKPOINTED TENSORS AS IS IN THE PREVIOUS VERSION?
-  // Oh, I remember, we are afraid that small tensors will get banished
-  // and make the big tensors unevictable.
-  // It sounds like a shitty reason - we can simply have an unbanishable flag
-  // as we do not rely on weak pointers anymore.
-  // And if we choose infinite staleness, then there is no need to deal with them specially -
-  // because they dont have rematerializer it will never get evicted.
-  // We should probably refactor and fix this, but it will take some nontrivial effort.
-  strongs input_values;
-  std::vector<std::tuple<Tensor, size_t>> constants;
-  weaks outputs;
   rematerialize_function_t func;
+  strongs inputs;
+  weaks outputs;
   Rematerializer(const Unsafe&,
-                 const strongs& input_values,
-                 const std::vector<std::tuple<Tensor, size_t>>& constants,
-                 const rematerialize_function_t& func)  :
-    input_values(input_values),
-    constants(constants),
-    func(func) {
+                 const rematerialize_function_t& func,
+                 const strongs& inputs)  :
+    func(func), inputs(inputs) {
   }
   void release_resources() final {
-    input_values.clear();
-    constants.clear();
-    outputs.clear();
     func = rematerialize_function_t();
+    inputs.clear();
+    outputs.clear();
   }
   void remat();
 };
