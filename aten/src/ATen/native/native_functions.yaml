@@ -3,6 +3,9 @@
 - func: checkpoint(Tensor self) -> Tensor
   variants: method
 
+- func: try_checkpoint(Tensor self) -> Tensor
+  variants: method
+
 - func: is_checkpoint(Tensor self) -> bool
   variants: method
 
