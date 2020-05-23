@@ -15,10 +15,16 @@
 - func: decheckpoint(Tensor self) -> Tensor
   variants: method
 
+- func: pin(Tensor(a!) self) -> ()
+  variants: method
+
 - func: new_log(str logname) -> ()
   variants: function
 
 - func: annotate_log(str logname) -> ()
+  variants: function
+
+- func: clear_checkpointpool() -> ()
   variants: function
 
 # Temporary type cast operators. These are needed to trace type-casts now since
@@ -1326,6 +1332,10 @@
   variants: method  # This is method-only to match the previous tensor API. In the future we could make this a function too.
   device_guard: False
   supports_named_tensor: True
+  dispatch:
+    CPU: expand
+    CUDA: expand
+    Checkpoint: checkpoint_expand
 
 - func: expand_as(Tensor self, Tensor other) -> Tensor
   use_c10_dispatcher: full
@@ -2713,11 +2723,33 @@
   variants: function, method
   device_guard: False
   supports_named_tensor: True
+  dispatch:
+    CPU: split
+    CUDA: split
+    Checkpoint: checkpoint_split
+
+- func: split_backward(Tensor[] grads, int split_size, int dim, int[] sizes, ScalarType dtype, Layout layout, Device device, bool pin_memory=False) -> Tensor
+  variants: function
+  dispatch:
+    CPU: split_backward
+    CUDA: split_backward
+    Checkpoint: checkpoint_split_backward
 
 - func: split_with_sizes(Tensor self, int[] split_sizes, int dim=0) -> Tensor[]
   variants: function, method
   device_guard: False
   supports_named_tensor: True
+  dispatch:
+    CPU: split_with_sizes
+    CUDA: split_with_sizes
+    Checkpoint: checkpoint_split_with_sizes
+
+- func: split_with_sizes_backward(Tensor[] grads, int[] split_sizes, int dim, int[] sizes, ScalarType dtype, Layout layout, Device device, bool pin_memory=False) -> Tensor
+  variants: function
+  dispatch:
+    CPU: split_with_sizes_backward
+    CUDA: split_with_sizes_backward
+    Checkpoint: checkpoint_split_with_sizes_backward
 
 - func: squeeze(Tensor(a) self) -> Tensor(a)
   supports_named_tensor: True

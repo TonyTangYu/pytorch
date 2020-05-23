@@ -902,7 +902,6 @@ Tensor& checkpoint_sub_(at::Tensor& a, at::Tensor const& b, c10::Scalar c) {
   return a;
 }
 
-
 Tensor checkpoint_repeat(const at::Tensor& a, c10::ArrayRef<long> b) {
   std::vector<long> b_ = b.vec();
   rematerialize_function_t rt =
@@ -1534,6 +1533,52 @@ bool checkpoint_equal(const Tensor& self, const Tensor& other) {
 
 Scalar checkpoint__local_scalar_dense(at::Tensor const& a) {
   return at::_local_scalar_dense(decheckpoint(a));
+}
+
+Tensor checkpoint_split_with_sizes_backward(c10::ArrayRef<at::Tensor> a, c10::ArrayRef<long> b, long c, c10::ArrayRef<long> d, c10::TensorOptions const& e) {
+  std::vector<Tensor> a_ = a.vec();
+  std::vector<long> d_ = d.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::split_with_sizes_backward(vec, b, c, d_, e)};
+    };
+  return CheckpointTensorImpl::make("split_with_sizes_backward", rt, a_)[0];
+}
+
+std::vector<Tensor> checkpoint_split_with_sizes(at::Tensor const& a, c10::ArrayRef<long> b, long c) {
+  std::vector<long> b_ = b.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return at::split_with_sizes(vec.at(0), b_, c);
+    };
+  return CheckpointTensorImpl::make("split_with_sizes", rt, {a});
+}
+
+Tensor checkpoint_split_backward(c10::ArrayRef<at::Tensor> a, long b, long c, c10::ArrayRef<long> d, const c10::TensorOptions& e) {
+  std::vector<Tensor> a_ = a.vec();
+  std::vector<long> d_ = d.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::split_backward(vec, b, c, d_, e)};
+    };
+  return CheckpointTensorImpl::make("split_backward", rt, a_)[0];
+}
+
+std::vector<Tensor> checkpoint_split(const at::Tensor& a, long b, long c) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return at::split(vec.at(0), b, c);
+    };
+  return CheckpointTensorImpl::make("split", rt, {a});
+}
+
+Tensor checkpoint_expand(at::Tensor const& a, c10::ArrayRef<long> b, bool c) {
+  std::vector<long> b_ = b.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {vec.at(0).expand(b_, c)};
+    };
+  return CheckpointTensorImpl::make("expand", rt, {a})[0];
 }
 
 }}
