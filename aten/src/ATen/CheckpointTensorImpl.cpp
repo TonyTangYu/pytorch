@@ -4,12 +4,16 @@
 
 namespace at {
 
+bool use_log = true;
+
 namespace native {
 
 Tensor checkpoint(const Tensor& t) {
   auto cpti = intrusive_ptr<CheckpointTensorImpl>::make(t.detach());
-  DTRLogConstant(cpti->counter_name());
-  DTRLogMemory(cpti->counter_name(), cpti->ref->value->value->memory());
+  if (use_log) {
+    DTRLogConstant(cpti->counter_name());
+    DTRLogMemory(cpti->counter_name(), cpti->ref->value->value->memory());
+  }
   return Tensor(cpti);
 }
 
@@ -44,6 +48,7 @@ void new_log(std::string str) {
 }
 
 void annotate_log(std::string str) {
+  if (!use_log) { return; }
   if (log_json) {
     json j;
     j[INSTRUCTION] = "ANNOTATE";
@@ -52,6 +57,10 @@ void annotate_log(std::string str) {
   } else {
     DTRLogger::logger().log("# " + str);
   }
+}
+
+void toggle_log(bool b) {
+  use_log = b;
 }
 
 void clear_checkpointpool() {
@@ -115,7 +124,9 @@ void Rematerializer::remat() {
 intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const VariableVersion& version_counter,
                                                                         bool allow_tensor_metadata_change) const {
   auto ret = intrusive_ptr<CheckpointTensorImpl>::make(ref);
-  DTRLogCopy(ret->counter_name(), counter_name());
+  if (use_log) {
+    DTRLogCopy(ret->counter_name(), counter_name());
+  }
   return ret;
 }
 
@@ -124,7 +135,9 @@ void CheckpointTensorImpl::shallow_copy_from(const c10::intrusive_ptr<TensorImpl
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(impl.get());
   TORCH_CHECK(cpti != nullptr);
   ref->value = cpti->ref->value;
-  DTRLogCopyFrom(counter_name(), cpti->counter_name());
+  if (use_log) {
+    DTRLogCopyFrom(counter_name(), cpti->counter_name());
+  }
 }
 
 int CheckpointTensorImpl::counter = 0;
@@ -199,7 +212,9 @@ Tensors CheckpointTensorImpl::make(const std::string& name,
     auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
     TORCH_CHECK(cpti);
     input_values.push_back(cpti->ref->value->value);
-    args.push_back(cpti->counter_name());
+    if (use_log) {
+      args.push_back(cpti->counter_name());
+    }
   }
   std::vector<std::string> res;
   auto ret = make_raw(remat, input_values);
@@ -209,12 +224,14 @@ Tensors CheckpointTensorImpl::make(const std::string& name,
     tensors.push_back(cp);
     res.push_back(get_cpti(cp)->counter_name());
   }
-  DTRLogCall(res, name, args, from_time(ret.time));
-  for (size_t i = 0; i < tensors.size(); ++i) {
-    Tensor t = tensors[i];
-    auto cpti = get_cpti(t);
-    DTRLogMemory(cpti->counter_name(), cpti->ref->value->value->memory());
-    DTRLogAlias(cpti->counter_name(), ret.aliases[i]);
+  if (use_log) {
+    DTRLogCall(res, name, args, from_time(ret.time));
+    for (size_t i = 0; i < tensors.size(); ++i) {
+      Tensor t = tensors[i];
+      auto cpti = get_cpti(t);
+      DTRLogMemory(cpti->counter_name(), cpti->ref->value->value->memory());
+      DTRLogAlias(cpti->counter_name(), ret.aliases[i]);
+    }
   }
   return tensors;
 }
@@ -239,18 +256,24 @@ void CheckpointTensorImpl::mutate(const std::string& name,
     auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
     TORCH_CHECK(cpti);
     input_values.push_back(cpti->ref->value->value);
-    args.push_back(cpti->counter_name());
+    if (use_log) {
+      args.push_back(cpti->counter_name());
+    }
   }
   auto ret = make_raw(remat, input_values);
   const auto& modified = ret.outputs;
   for (size_t idx: mutate_idx) {
     cell_from_tensor(inputs[idx])->value = modified[idx];
   }
-  DTRLogMutate(name, args, mutate_idx, from_time(ret.time));
+  if (use_log) {
+    DTRLogMutate(name, args, mutate_idx, from_time(ret.time));
+  }
 }
 
 void CheckpointTensorImpl::release_resources() {
-  DTRLogRelease(counter_name());
+  if (use_log) {
+    DTRLogRelease(counter_name());
+  }
   ref.reset();
 }
 
