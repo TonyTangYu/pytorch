@@ -1581,4 +1581,40 @@ Tensor checkpoint_expand(at::Tensor const& a, c10::ArrayRef<long> b, bool c) {
   return CheckpointTensorImpl::make("expand", rt, {a})[0];
 }
 
+Tensor checkpoint_diag(at::Tensor const& self, long diagonal) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::diag(vec.at(0), diagonal)};
+    };
+  return CheckpointTensorImpl::make("diag", rt, {self})[0];
+}
+
+Tensor& checkpoint_diag_out(at::Tensor& out, const Tensor& self, long diagonal) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      Tensor out_ = vec.at(0);
+      at::diag_out(out_, vec.at(1), diagonal);
+    };
+  CheckpointTensorImpl::mutate("diag_out", mt, {out, self}, {0});
+  return {out};
+}
+
+Tensor checkpoint_mv(at::Tensor const& self, at::Tensor const& vec) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::mv(vec.at(0), vec.at(1))};
+    };
+  return CheckpointTensorImpl::make("mv", rt, {self, vec})[0];
+}
+
+Tensor& checkpoint_mv_out(at::Tensor& out, const Tensor& self, const Tensor& vec) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      Tensor out_ = vec.at(0);
+      at::mv_out(out_, vec.at(1), vec.at(2));
+    };
+  CheckpointTensorImpl::mutate("mv_out", mt, {out, self, vec}, {0});
+  return {out};
+}
+
 }}
