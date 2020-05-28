@@ -2158,12 +2158,14 @@
   dispatch:
     CPU: mv_cpu
     CUDA: legacy::cuda::_th_mv
+    Checkpoint: checkpoint_mv
   supports_named_tensor: True
 
 - func: mv.out(Tensor self, Tensor vec, *, Tensor(a!) out) -> Tensor(a!)
   dispatch:
     CPU: mv_cpu_out
     CUDA: legacy::cuda::_th_mv_out
+    Checkpoint: checkpoint_mv_out
   supports_named_tensor: True
 
 - func: mvlgamma(Tensor self, int p) -> Tensor
@@ -4613,6 +4615,7 @@
   dispatch:
     CPU: legacy::cpu::_th_diag_out
     CUDA: legacy::cuda::_th_diag_out
+    Checkpoint: checkpoint_diag_out
 
 - func: diag(Tensor self, int diagonal=0) -> Tensor
   use_c10_dispatcher: full
@@ -4620,6 +4623,7 @@
   dispatch:
     CPU: legacy::cpu::_th_diag
     CUDA: legacy::cuda::_th_diag
+    Checkpoint: checkpoint_diag
 
 - func: cross.out(Tensor self, Tensor other, int? dim=None, *, Tensor(a!) out) -> Tensor(a!)
 
