@@ -288,58 +288,6 @@ void CheckpointTensorCell::fill(const Tensor& t) {
   }
 }
 
-Tensor uncheckpoint(const strong& input) {
-  return input->get();
-}
-
-Tensors uncheckpoint(const strongs& inputs) {
-  Tensors ret;
-  for (const strong& input : inputs) {
-    ret.push_back(uncheckpoint(input));
-  }
-  return ret;
-};
-
-Tensors try_checkpoint(const Tensors& inputs) {
-  Tensors ret;
-  for (const Tensor& input : inputs) {
-    ret.push_back(at::native::try_checkpoint(input));
-  }
-  return ret;
-}
-
-void AliasPool::evict() {
-  TORCH_CHECK(lock_count == 0);
-  for (const weak& w : tensors) {
-    if (auto cell = w.lock()) {
-      cell->evict();
-    }
-  }
-}
-
-void External::release_resources() {
-  value->evict();
-  value.reset();
-}
-
-void Rematerializer::remat() {
-  // TODO: refactor using RAII for exception safety.
-  for (const strong& s : inputs) {
-    ++(s->pool->lock_count);
-  }
-  Tensors ts = uncheckpoint(inputs);
-  auto ret = func(ts);
-  TORCH_CHECK(ret.size() == outputs.size());
-  for (size_t i = 0; i < outputs.size(); ++i) {
-    if (auto output_cell = outputs[i].lock()) {
-      output_cell->fill(ret[i]);
-    }
-  }
-  for (const strong& s : inputs) {
-    --(s->pool->lock_count);
-  }
-}
-
 intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const VariableVersion& version_counter,
                                                                         bool allow_tensor_metadata_change) const {
   auto ret = intrusive_ptr<CheckpointTensorImpl>::make(ref);
