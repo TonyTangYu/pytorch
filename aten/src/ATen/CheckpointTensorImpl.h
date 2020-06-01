@@ -155,17 +155,14 @@ using time_t = std::chrono::time_point<std::chrono::system_clock>;
 using duration_t = std::chrono::system_clock::duration;
 struct CheckpointInfo {
   duration_t compute_cost;
-  time_t last_used_time;
   // @ZACH: Floating Point instability?
-  double score(size_t memory, time_t current_time) const {
+  double score(size_t memory, size_t staleness) const {
     TORCH_CHECK(memory > 0);
-    auto staleness = (current_time - last_used_time).count();
     TORCH_CHECK(staleness > 0);
     return compute_cost.count() / static_cast<double>(memory * staleness);
   }
-  CheckpointInfo(duration_t compute_cost, time_t last_used_time) :
-    compute_cost(compute_cost),
-    last_used_time(last_used_time) {
+  CheckpointInfo(duration_t compute_cost) :
+    compute_cost(compute_cost) {
   }
 };
 
@@ -211,8 +208,8 @@ struct Rematerializer : intrusive_ptr_target {
     outputs.clear();
   }
   void remat();
-  ecn_ptr get_ecn(time_t last_used_time);
-  CheckpointInfo get_cpi(time_t last_used_time);
+  ecn_ptr get_ecn();
+  CheckpointInfo get_cpi();
 };
 
 // Track all Tensor that share the same Storage.

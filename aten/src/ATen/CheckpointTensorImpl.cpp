@@ -164,13 +164,12 @@ Tensors try_checkpoint(const Tensors& inputs) {
 }
 
 CheckpointInfo merge_cpi(CheckpointInfo l, CheckpointInfo r) {
-  return CheckpointInfo(l.compute_cost + r.compute_cost,
-                        std::max(l.last_used_time, r.last_used_time));
+  return CheckpointInfo(l.compute_cost + r.compute_cost);
 }
 
 void AliasPool::evict() {
   TORCH_CHECK(!ecn);
-  ecn = head_remat->get_ecn(last_used_time);
+  ecn = head_remat->get_ecn();
   auto ecns = neighbor_ecn();
   for (const auto& necn : ecns) {
     merge<CheckpointInfo>(merge_cpi, ecn, necn);
@@ -190,12 +189,12 @@ void AliasPool::evict() {
 }
 
 double AliasPool::score(time_t current_time) {
-  auto cpi = head_remat->get_cpi(last_used_time);
+  auto cpi = head_remat->get_cpi();
   auto ecns = neighbor_ecn();
   for (const auto& necn : ecns) {
     cpi = merge_cpi(cpi, get_t(necn));
   }
-  return cpi.score(memory, current_time);
+  return cpi.score(memory, (current_time - last_used_time).count());
 }
 
 void External::release_resources() {
@@ -222,18 +221,15 @@ void Rematerializer::remat() {
   }
 }
 
-ecn_ptr Rematerializer::get_ecn(time_t last_used_time) {
-  if (ecn) {
-    auto cpi = get_t(ecn);
-    update_t(ecn, CheckpointInfo(cpi.compute_cost, std::max(last_used_time, cpi.last_used_time)));
-  } else {
-    ecn = ecn_ptr::make(CheckpointInfo(compute_cost, last_used_time));
+ecn_ptr Rematerializer::get_ecn() {
+  if (!ecn) {
+    ecn = ecn_ptr::make(CheckpointInfo(compute_cost));
   }
   return ecn;
 }
 
-CheckpointInfo Rematerializer::get_cpi(time_t last_used_time) {
-  return CheckpointInfo(ecn ? duration_t(0) : compute_cost, last_used_time);
+CheckpointInfo Rematerializer::get_cpi() {
+  return CheckpointInfo(ecn ? duration_t(0) : compute_cost);
 }
 
 std::vector<ecn_ptr> AliasPool::neighbor_ecn() {
@@ -260,7 +256,7 @@ void AliasPool::set_not_evicted(const intrusive_ptr<AliasPool>& self) {
     if (ecn) {
       TORCH_CHECK(head_remat);
       auto cpi = get_t(ecn);
-      update_t(ecn, CheckpointInfo(cpi.compute_cost - head_remat->compute_cost, cpi.last_used_time));
+      update_t(ecn, CheckpointInfo(cpi.compute_cost - head_remat->compute_cost));
       ecn.reset();
     }
     pool.aps.push_back(weak_intrusive_ptr<AliasPool>(self));
