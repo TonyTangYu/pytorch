@@ -312,6 +312,7 @@ struct CheckpointTensorCell : intrusive_ptr_target {
     return strides_[d];
   }
   void evict() {
+    TORCH_CHECK(remat);
     t.reset();
   }
   void fill(const Tensor& t);

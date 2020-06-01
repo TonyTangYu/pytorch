@@ -198,7 +198,9 @@ double AliasPool::score(time_t current_time) {
 }
 
 void External::release_resources() {
-  value->evict();
+  if (value->remat) {
+    value->evict();
+  }
   value.reset();
 }
 
