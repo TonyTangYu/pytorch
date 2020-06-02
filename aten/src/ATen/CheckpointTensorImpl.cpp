@@ -418,7 +418,8 @@ std::set<ecn_ptr> AliasPool::neighbor_ecn() {
   std::set<ecn_ptr> ptr_set;
 
   STATS.track("AliasPool::neighbor_ecn(process nodes)");
-  for (size_t i = 0; i < neighbors.size();) {
+  int back = neighbors.size() - 1;
+  for (size_t i = 0; i < back;) {
     if (auto cptc = neighbors[i].lock()) {
       STATS.track("AliasPool::neighbor_ecn(true-branch)");
       if (cptc->pool->ecn) {
@@ -427,10 +428,13 @@ std::set<ecn_ptr> AliasPool::neighbor_ecn() {
       ++i;
     } else {
       STATS.track("AliasPool::neighbor_ecn(false-branch)");
-      neighbors[i] = neighbors[neighbors.size() - 1];
-      neighbors.pop_back();
+      neighbors[i] = neighbors[back];
+      back = back - 1;
     }
   }
+
+  CheckpointTensorCell* ptr = nullptr;
+  neighbors.resize(back, weak_intrusive_ptr<CheckpointTensorCell>(ptr));
 
   return ptr_set;
 }
