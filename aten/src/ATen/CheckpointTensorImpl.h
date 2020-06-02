@@ -21,6 +21,9 @@
 #include <ATen/Tensor.h>
 #include <ATen/ATen.h>
 
+#define likely(x)      __builtin_expect(!!(x), 1) 
+#define unlikely(x)    __builtin_expect(!!(x), 0) 
+
 // System Description:
 // Every Tensor is managed by a CheckpointTensor,
 // that describe how it is computed, (the function and the inputs)
@@ -280,37 +283,10 @@ struct CheckpointTensorCell : intrusive_ptr_target {
     TORCH_CHECK(defined);
     return optional_device_;
   }
-  int64_t dim_, numel_;
-  size_t itemsize_;
-  std::vector<long> sizes_, strides_;
   // A Tensor is evictable iff it's AliasPool is evictable.
   // A evictable tensor must have Rematerializer.
   intrusive_ptr<AliasPool> pool;
   intrusive_ptr<Rematerializer> remat;
-  int64_t dim() const {
-    TORCH_CHECK(defined && !is_undefined_tensor);
-    return dim_;
-  }
-  int64_t numel() const {
-    TORCH_CHECK(defined && !is_undefined_tensor);
-    return numel_;
-  }
-  IntArrayRef sizes() const {
-    TORCH_CHECK(defined && !is_undefined_tensor);
-    return sizes_;
-  }
-  int64_t size(int64_t d) const {
-    TORCH_CHECK(defined && !is_undefined_tensor);
-    return sizes_[d];
-  }
-  IntArrayRef strides() const {
-    TORCH_CHECK(defined && !is_undefined_tensor);
-    return strides_;
-  }
-  int64_t stride(int64_t d) const {
-    TORCH_CHECK(defined && !is_undefined_tensor);
-    return strides_[d];
-  }
   void evict() {
     TORCH_CHECK(remat);
     t.reset();
@@ -324,9 +300,6 @@ struct CheckpointTensorCell : intrusive_ptr_target {
                                 const intrusive_ptr<Rematerializer>& remat) :
     pool(pool), remat(remat) {
     fill(t);
-  }
-  size_t itemsize() {
-    return itemsize_;
   }
   size_t memory() {
     TORCH_CHECK(defined);
@@ -406,8 +379,7 @@ struct CheckpointTensorImpl : TensorImpl {
   explicit CheckpointTensorImpl(const intrusive_ptr<External>& e) :
     CheckpointTensorImpl(Ref<intrusive_ptr<External>>::make(e)) { }
 
-  explicit CheckpointTensorImpl(const Tensor& t) :
-    CheckpointTensorImpl(intrusive_ptr<External>::make(t)) { }
+  explicit CheckpointTensorImpl(const Tensor& t);
 
   static Tensors make(const std::string& name,
                       const rematerialize_function_t& remat,
@@ -422,22 +394,22 @@ struct CheckpointTensorImpl : TensorImpl {
                                                     bool allow_tensor_metadata_change) const override;
   void shallow_copy_from(const c10::intrusive_ptr<TensorImpl>& impl) override;
   int64_t dim() const override {
-    return ref->value->value->dim();
+    return ref->value->value->get().dim();
   }
   int64_t numel() const override {
-    return ref->value->value->numel();
+    return ref->value->value->get().numel();
   }
   IntArrayRef sizes() const override {
-    return ref->value->value->sizes();
+    return ref->value->value->get().sizes();
   }
   int64_t size(int64_t d) const override {
-    return ref->value->value->size(d);
+    return ref->value->value->get().size(d);
   }
   IntArrayRef strides() const override {
-    return ref->value->value->strides();
+    return ref->value->value->get().strides();
   }
   int64_t stride(int64_t d) const override {
-    return ref->value->value->stride(d);
+    return ref->value->value->get().stride(d);
   }
   bool has_storage() const override {
     return false;
@@ -447,6 +419,7 @@ struct CheckpointTensorImpl : TensorImpl {
 // CheckpointPool keep a list of AliasPool, and search over them to choose the best one to evict.
 struct CheckpointPool {
   std::vector<weak_intrusive_ptr<AliasPool>> aps;
+  std::vector<weak_intrusive_ptr<External>> exts;
   bool has_memory_budget = false;
   long memory_budget;
   void evict();

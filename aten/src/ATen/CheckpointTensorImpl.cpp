@@ -17,8 +17,8 @@ struct PerfStats;
 struct Timer {
   std::string name;
   Time start;
-  PerfStats& stats;
-  Timer(std::string name, Time start, PerfStats& stats) : name(name), start(start), stats(stats) {}
+  Timer(std::string name, Time start) : name(name), start(start) {}
+  Timer() {}
   ~Timer();
 };
 
@@ -41,8 +41,9 @@ struct PerfStats {
       this->calls.insert({name, 0});
     }
 
-    return Timer(name, Clock::now(), *this);
+    return Timer(name, Clock::now());
     }
+    return Timer();
   }
 
   ~PerfStats() {
@@ -91,14 +92,14 @@ struct PerfStats {
   }
 };
 
+static PerfStats STATS = PerfStats();
+
 Timer::~Timer() {
   Time now = Clock::now();
   Duration elapsed = now - start;
   PerfStats::TimerStats stats = { name , start, now, elapsed };
-  this->stats.timers.push_back(stats);
+  STATS.timers.push_back(stats);
 }
-
-static PerfStats STATS = PerfStats();
 
 CheckpointPool pool;
 
@@ -235,7 +236,12 @@ void toggle_log(bool b) {
 }
 
 void clear_checkpointpool() {
-  // not implemented yet.
+  while (likely(!pool.exts.empty())) {
+    if (auto e = pool.exts.back().lock()) {
+      e->value->pin();
+    }
+    pool.exts.pop_back();
+  }
 }
 
 void unset_memory_budget() {
@@ -436,9 +442,8 @@ std::set<ecn_ptr> AliasPool::neighbor_ecn() {
 }
 
 void AliasPool::set_not_evicted(const intrusive_ptr<AliasPool>& self) {
-  STATS.track("AliasPool::set_not_evicted");
-  std::vector<ecn_ptr> ret;
-  if (is_evicted) {
+  if (unlikely(is_evicted)) {
+    STATS.track("AliasPool::set_not_evicted(inside)");
     is_evicted = false;
     if (ecn) {
       TORCH_CHECK(head_remat);
@@ -454,7 +459,6 @@ void CheckpointTensorCell::fill(const Tensor& t) {
   STATS.track("CheckpointTensorCell::fill");
   if (!(this->t)) {
     this->t = std::make_unique<Tensor>(t.detach());
-    STATS.track("CheckpointTensorCell::fill(after_alloc)");
     pool->set_not_evicted(pool);
     if (!defined) {
       defined = true;
@@ -462,13 +466,6 @@ void CheckpointTensorCell::fill(const Tensor& t) {
       key_set_ = t.key_set();
       dtype_ = t.dtype();
       optional_device_ = t.optional_device();
-      if (! is_undefined_tensor) {
-        dim_ = t.dim();
-        numel_ = t.numel();
-        itemsize_ = t.itemsize();
-        sizes_ = t.sizes().vec();
-        strides_ = t.strides().vec();
-      }
     }
   }
 }
@@ -562,6 +559,7 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
       }
     }
     auto e = intrusive_ptr<External>::make(t, alias_pool, remat);
+    pool.exts.push_back(weak_intrusive_ptr<External>(e));
     alias_pool->tensors.push_back(weak(e->value));
     outputs.push_back(e);
     aliases.push_back(alias);
@@ -676,6 +674,10 @@ void CheckpointTensorImpl::release_resources() {
     DTRLogRelease(counter_name());
   }
   ref.reset();
+}
+
+CheckpointTensorImpl::CheckpointTensorImpl(const Tensor& t) : CheckpointTensorImpl(intrusive_ptr<External>::make(t)) {
+  pool.exts.push_back(weak_intrusive_ptr<External>(ref->value));
 }
 
 }
