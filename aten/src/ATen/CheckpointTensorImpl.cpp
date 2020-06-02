@@ -2,11 +2,108 @@
 #include <ATen/Logger.h>
 #include <c10/cuda/CUDACachingAllocator.h>
 
+#include <chrono>
+#include <string>
+
 namespace at {
+
+using Clock = std::chrono::high_resolution_clock;
+using Time = Clock::time_point;
+using Duration = Clock::duration;
+using FinalTime = std::chrono::nanoseconds;
+
+struct PerfStats;
+
+struct Timer {
+  std::string name;
+  Time start;
+  PerfStats& stats;
+  Timer(std::string name, Time start, PerfStats& stats) : name(name), start(start), stats(stats) {}
+  ~Timer();
+};
+
+bool stats = true;
+
+struct PerfStats {
+  using TimerStats = std::tuple<std::string, Time, Time, Duration>;
+  Time start;
+  std::unordered_map<std::string, int> calls;
+  std::vector<PerfStats::TimerStats> timers;
+
+  PerfStats() : start(Clock::now()), calls(0), timers() {}
+
+  Timer track(std::string name) {
+    if (stats) {
+    auto it = this->calls.find(name);
+    if (it != this->calls.end()) {
+      it->second += 1;
+    } else {
+      this->calls.insert({name, 0});
+    }
+
+    return Timer(name, Clock::now(), *this);
+    }
+  }
+
+  ~PerfStats() {
+    if (!stats) { return; }
+    auto start = std::get<1>(this->timers[0]);
+    auto now = Clock::now();
+    std::cout << "All done. Here are some perf stats fresh off the preses." << std::endl;
+    std::unordered_map<std::string, Duration> durations;
+
+    Duration total = now - this->start;
+
+    // For now simple strategy, count up all the time taken
+    // by each "tagged call site".
+    for (auto timer : timers) {
+      auto name = std::get<0>(timer);
+      Duration duration = std::get<3>(timer);
+      auto it = durations.find(name);
+      if (it != durations.end()) {
+        it->second += duration;
+      } else {
+        durations.insert({name, duration});
+      }
+    }
+
+    std::vector<std::pair<std::string, Duration>> data;
+
+    // Convert the durations
+    for (auto d : durations) {
+      // auto duration = std::chrono::duration_cast<FinalTime>(d.second);
+      data.push_back(d);
+    }
+
+    std::sort(data.begin(), data.end(),
+    [](const std::pair<std::string, Duration> & a, const std::pair<std::string, Duration> & b) -> bool {
+      return a.second > b.second;
+    });
+
+    for (auto d : data) {
+      auto duration = std::chrono::duration_cast<FinalTime>(d.second);
+      auto total_duration = std::chrono::duration_cast<FinalTime>(total);
+      double percentage = ((double)duration.count())/((double)total_duration.count()) * 100;
+      auto call_count = this->calls.find(d.first);
+      TORCH_CHECK(call_count != this->calls.end());
+      std::cout << "CallSite: " << d.first << " CallCount: " << call_count->second << " Cost: " << duration.count() << "ns" << " (%" << percentage << ")" << std::endl;
+    }
+  }
+};
+
+Timer::~Timer() {
+  Time now = Clock::now();
+  Duration elapsed = now - start;
+  PerfStats::TimerStats stats = { name , start, now, elapsed };
+  this->stats.timers.push_back(stats);
+}
+
+static PerfStats STATS = PerfStats();
 
 CheckpointPool pool;
 
 long current_memory() {
+  STATS.track("current_memory");
   auto device_stat = c10::cuda::CUDACachingAllocator::getDeviceStats(0);
   return device_stat.allocated_bytes[0].current;
 }
@@ -16,6 +113,7 @@ void checkpoint_auto_evict() {
 }
 
 void CheckpointPool::auto_evict() {
+  STATS.track("CheckpointPool::auto_evict");
   if (has_memory_budget) {
     while (current_memory() > memory_budget) {
       evict();
@@ -24,6 +122,7 @@ void CheckpointPool::auto_evict() {
 }
 
 void CheckpointPool::evict() {
+  STATS.track("CheckpointPool::evict");
   TORCH_CHECK(aps.size() > 0);
   bool shrinked = false;
   int evict_idx = -1;
@@ -66,14 +165,16 @@ void CheckpointPool::evict() {
 }
 
 CheckpointPool::CheckpointPool() {
+  STATS.track("CheckpointPool::CheckpointPool");
   c10::set_evict_func(checkpoint_auto_evict);
 }
 
-bool use_log = true;
+bool use_log = false;
 
 namespace native {
 
 Tensor checkpoint(const Tensor& t) {
+  STATS.track("checkpoint");
   auto cpti = intrusive_ptr<CheckpointTensorImpl>::make(t.detach());
   if (use_log) {
     DTRLogConstant(cpti->counter_name());
@@ -83,28 +184,33 @@ Tensor checkpoint(const Tensor& t) {
 }
 
 Tensor uncheckpoint(const Tensor& t) {
+  STATS.track("uncheckpoint");
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
-  CHECK(cpti != nullptr);
+  // CHECK(cpti != nullptr);
   return cpti->ref->value->value->get();
 }
 
 void pin(const Tensor& t) {
+  STATS.track("pin");
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
-  CHECK(cpti != nullptr);
+  // CHECK(cpti != nullptr);
   cpti->ref->value->value->pin();
 }
 
 Tensor decheckpoint(const Tensor& t) {
+  STATS.track("decheckpoint");
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
   return cpti ? cpti->ref->value->value->get() : t;
 }
 
 bool is_checkpoint(const Tensor& t) {
+  STATS.track("is_checkpoint");
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
   return cpti != nullptr;
 }
 
 Tensor try_checkpoint(const Tensor& t) {
+  STATS.track("try_checkpiont");
   return is_checkpoint(t) ? t : checkpoint(t);
 }
 
@@ -143,20 +249,26 @@ void set_memory_budget(long budget) {
 
 }
 
+[[inline]]
 Tensor uncheckpoint(const strong& input) {
   return input->get();
 }
 
 Tensors uncheckpoint(const strongs& inputs) {
+  STATS.track("uncheckpoint");
   Tensors ret;
+  ret.reserve(inputs.size());
   for (const strong& input : inputs) {
-    ret.push_back(uncheckpoint(input));
+    // Jared: inlined manually
+    ret.push_back(input->get());
   }
   return ret;
 };
 
 Tensors try_checkpoint(const Tensors& inputs) {
+  STATS.track("try_checkpoint");
   Tensors ret;
+  ret.reserve(inputs.size());
   for (const Tensor& input : inputs) {
     ret.push_back(at::native::try_checkpoint(input));
   }
@@ -164,10 +276,12 @@ Tensors try_checkpoint(const Tensors& inputs) {
 }
 
 CheckpointInfo merge_cpi(CheckpointInfo l, CheckpointInfo r) {
+  STATS.track("merge_cpi");
   return CheckpointInfo(l.compute_cost + r.compute_cost);
 }
 
 void AliasPool::evict() {
+  STATS.track("AliasPool::evict");
   TORCH_CHECK(!ecn);
   ecn = head_remat->get_ecn();
   auto ecns = neighbor_ecn();
@@ -175,9 +289,9 @@ void AliasPool::evict() {
     merge<CheckpointInfo>(merge_cpi, ecn, necn);
   }
   auto b4 = current_memory();
-  TORCH_CHECK(memory > 0);
-  TORCH_CHECK(lock_count == 0);
-  TORCH_CHECK(!is_evicted);
+  // cTORCH_CHECK(memory > 0);
+  // TORCH_CHECK(lock_count == 0);
+  // TORCH_CHECK(!is_evicted);
   is_evicted = true;
   for (const weak& w : tensors) {
     if (auto cell = w.lock()) {
@@ -234,25 +348,96 @@ CheckpointInfo Rematerializer::get_cpi() {
   return CheckpointInfo(ecn ? duration_t(0) : compute_cost);
 }
 
-std::vector<ecn_ptr> AliasPool::neighbor_ecn() {
-  std::vector<ecn_ptr> ret;
+// A utility function to swap two elements
+void swap(int* a, int* b)
+{
+    int t = *a;
+    *a = *b;
+    *b = t;
+}
+
+// /* This function is same in both iterative and recursive*/
+// template<typename T>
+// int partition(std::vector<T>& arr, int l, int h)
+// {
+//     int x = arr[h];
+//     int i = (l - 1);
+
+//     for (int j = l; j <= h - 1; j++) {
+//         if (arr[j] <= x) {
+//             i++;
+//             swap(&arr[i], &arr[j]);
+//         }
+//     }
+//     swap(&arr[i + 1], &arr[h]);
+//     return (i + 1);
+// }
+
+// template<typename T>
+// void qsort_dedup(std::vector<T>& arr, int l, int h)
+// {
+//     // Create an auxiliary stack
+//     std::vector<T> stack;
+//     stack.reserve(h - l + 1);
+
+//     // initialize top of stack
+//     int top = -1;
+
+//     // push initial values of l and h to stack
+//     stack[++top] = l;
+//     stack[++top] = h;
+
+//     // Keep popping from stack while is not empty
+//     while (top >= 0) {
+//         // Pop h and l
+//         h = stack[top--];
+//         l = stack[top--];
+
+//         // Set pivot element at its correct position
+//         // in sorted array
+//         int p = partition(arr, l, h);
+
+//         // If there are elements on left side of pivot,
+//         // then push left side to stack
+//         if (p - 1 > l) {
+//             stack[++top] = l;
+//             stack[++top] = p - 1;
+//         }
+
+//         // If there are elements on right side of pivot,
+//         // then push right side to stack
+//         if (p + 1 < h) {
+//             stack[++top] = p + 1;
+//             stack[++top] = h;
+//         }
+//     }
+// }
+
+std::set<ecn_ptr> AliasPool::neighbor_ecn() {
+  STATS.track("AliasPool::neighbor_ecn");
+  std::set<ecn_ptr> ptr_set;
+
+  STATS.track("AliasPool::neighbor_ecn(process nodes)");
   for (size_t i = 0; i < neighbors.size();) {
     if (auto cptc = neighbors[i].lock()) {
+      STATS.track("AliasPool::neighbor_ecn(true-branch)");
       if (cptc->pool->ecn) {
-        ret.push_back(cptc->pool->ecn);
+        ptr_set.insert(cptc->pool->ecn);
       }
       ++i;
     } else {
+      STATS.track("AliasPool::neighbor_ecn(false-branch)");
       neighbors[i] = neighbors[neighbors.size() - 1];
       neighbors.pop_back();
     }
   }
-  std::sort(ret.begin(), ret.end());
-  ret.erase(std::unique(ret.begin(), ret.end()), ret.end());
-  return ret;
+
+  return ptr_set;
 }
 
 void AliasPool::set_not_evicted(const intrusive_ptr<AliasPool>& self) {
+  STATS.track("AliasPool::set_not_evicted");
+  std::vector<ecn_ptr> ret;
   if (is_evicted) {
     is_evicted = false;
     if (ecn) {
@@ -266,8 +451,10 @@ void AliasPool::set_not_evicted(const intrusive_ptr<AliasPool>& self) {
 }
 
 void CheckpointTensorCell::fill(const Tensor& t) {
+  STATS.track("CheckpointTensorCell::fill");
   if (!(this->t)) {
     this->t = std::make_unique<Tensor>(t.detach());
+    STATS.track("CheckpointTensorCell::fill(after_alloc)");
     pool->set_not_evicted(pool);
     if (!defined) {
       defined = true;
@@ -296,6 +483,7 @@ intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const Va
 }
 
 void CheckpointTensorImpl::shallow_copy_from(const c10::intrusive_ptr<TensorImpl>& impl) {
+  STATS.track("CheckpointTensorCell::shallow_copy_from");
   TORCH_CHECK(impl->key_set().has(DispatchKey::CheckpointTensorId));
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(impl.get());
   TORCH_CHECK(cpti != nullptr);
@@ -344,6 +532,7 @@ void add_neighbor(const strong& l, const strong& r) {
 // the size_t in constants decide the location to stitch them in, while input_values fill in the rest.
 MakeRawResult make_raw(const rematerialize_function_t& remat_f,
                        const strongs& inputs) {
+  STATS.track("make_raw");
   for (const strong& s : inputs) {
     s->pool->lock();
   }
@@ -355,6 +544,7 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
   std::vector<int> aliases;
   weaks weak_outputs;
   auto remat = intrusive_ptr<Rematerializer>::make(Unsafe(), remat_f, inputs, post - pre);
+
   for (const Tensor& t : raw_outputs) {
     intrusive_ptr<AliasPool> alias_pool;
     int alias = get_alias(raw_inputs, t);
@@ -398,9 +588,16 @@ std::string from_time(duration_t t) {
 Tensors CheckpointTensorImpl::make(const std::string& name,
                                    const rematerialize_function_t& remat,
                                    const Tensors& inputs) {
+  STATS.track("CheckPointTensorImpl::make");
   Tensors checkpointed_inputs = try_checkpoint(inputs);
+  auto input_size = checkpointed_inputs.size();
+
   strongs input_values;
+  input_values.reserve(input_size);
+
   std::vector<std::string> args;
+  args.reserve(input_size);
+
   for (const Tensor& t: checkpointed_inputs) {
     auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
     TORCH_CHECK(cpti);
@@ -409,15 +606,25 @@ Tensors CheckpointTensorImpl::make(const std::string& name,
       args.push_back(cpti->counter_name());
     }
   }
-  std::vector<std::string> res;
+
   auto ret = make_raw(remat, input_values);
+
   Tensors tensors;
+  tensors.reserve(ret.outputs.size());
+
   for (const auto& t: ret.outputs) {
     auto cp = Tensor(intrusive_ptr<CheckpointTensorImpl>::make(t));
     tensors.push_back(cp);
-    res.push_back(get_cpti(cp)->counter_name());
   }
+
   if (use_log) {
+    std::vector<std::string> res;
+    res.reserve(ret.outputs.size());
+
+    for (const auto& tensor : tensors) {
+      res.push_back(get_cpti(tensor)->counter_name());
+    }
+
     DTRLogCall(res, name, args, from_time(ret.time));
     for (size_t i = 0; i < tensors.size(); ++i) {
       Tensor t = tensors[i];
@@ -426,6 +633,7 @@ Tensors CheckpointTensorImpl::make(const std::string& name,
       DTRLogAlias(cpti->counter_name(), ret.aliases[i]);
     }
   }
+
   return tensors;
 }
 

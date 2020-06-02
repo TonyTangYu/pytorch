@@ -220,7 +220,7 @@ struct Rematerializer : intrusive_ptr_target {
 struct AliasPool : intrusive_ptr_target {
   weaks tensors;
   weaks neighbors;
-  std::vector<ecn_ptr> neighbor_ecn();
+  std::set<ecn_ptr> neighbor_ecn();
   // get() might hold some raw Tensor, rendering them unevictable.
   // it is likely that get() will run out of memory, and when it does so, it will try to evict.
   // so, it is crucial that we dont try to evict those tensors - doing so will not evict anything.
@@ -392,20 +392,27 @@ struct CheckpointTensorImpl : TensorImpl {
   std::string counter_name() const {
     return std::string("x") + std::to_string(id);
   }
+
   Ref<intrusive_ptr<External>> ref;
+
   void release_resources() final;
+
   explicit CheckpointTensorImpl(const Ref<intrusive_ptr<External>>& ref) :
     TensorImpl(convert_key_set(ref->value->value->key_set()),
                ref->value->value->dtype(),
                ref->value->value->optional_device()),
     ref(ref) { }
+
   explicit CheckpointTensorImpl(const intrusive_ptr<External>& e) :
     CheckpointTensorImpl(Ref<intrusive_ptr<External>>::make(e)) { }
+
   explicit CheckpointTensorImpl(const Tensor& t) :
     CheckpointTensorImpl(intrusive_ptr<External>::make(t)) { }
+
   static Tensors make(const std::string& name,
                       const rematerialize_function_t& remat,
                       const Tensors& inputs);
+
   // mutate_idx indicate which of the inputs will get mutated.
   static void mutate(const std::string& name,
                      const mutate_function_t& mutate,
