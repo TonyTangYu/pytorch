@@ -439,9 +439,7 @@ std::set<ecn_ptr> AliasPool::neighbor_ecn() {
     }
   }
 
-  CheckpointTensorCell* ptr = nullptr;
-  neighbors.resize(back, weak_intrusive_ptr<CheckpointTensorCell>(ptr));
-
+  neighbors.erase(neighbors.begin() + back);
   return ptr_set;
 }
 
