@@ -164,6 +164,7 @@ void CheckpointPool::evict() {
 CheckpointPool::CheckpointPool() { }
 
 bool use_log = false;
+long compute_time_ = 0;
 
 namespace native {
 
@@ -246,6 +247,14 @@ void set_memory_budget(long budget) {
   pool.has_memory_budget = true;
 }
 
+void reset_compute_time() {
+  compute_time_ = 0;
+}
+
+long compute_time() {
+  return compute_time_;
+}
+
 }
 
 [[inline]]
@@ -323,8 +332,11 @@ void Rematerializer::remat() {
     s->pool->lock();
   }
   Tensors ts = uncheckpoint(inputs);
+  time_t pre = std::chrono::system_clock::now();
   auto ret = func(ts);
+  time_t post = std::chrono::system_clock::now();
   pool.auto_evict();
+  compute_time_ += (post - pre).count();
   TORCH_CHECK(ret.size() == outputs.size());
   for (size_t i = 0; i < outputs.size(); ++i) {
     if (auto output_cell = outputs[i].lock()) {
@@ -532,6 +544,7 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
   auto raw_outputs = remat_f(raw_inputs);
   time_t post = std::chrono::system_clock::now();
   pool.auto_evict();
+  compute_time_ += (post - pre).count();
   std::vector<intrusive_ptr<External>> outputs;
   std::vector<int> aliases;
   weaks weak_outputs;

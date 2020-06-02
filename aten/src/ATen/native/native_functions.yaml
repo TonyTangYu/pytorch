@@ -43,6 +43,11 @@
 - func: unset_memory_budget() -> ()
   variants: function
 
+- func: reset_compute_time() -> ()
+  variants: function
+
+- func: compute_time() -> int
+  variants: function
 # Temporary type cast operators. These are needed to trace type-casts now since
 # Type's are not supported in the IR. Instead, we call down to these
 # specialized operators for each datatype.
