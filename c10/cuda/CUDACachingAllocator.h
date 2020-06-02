@@ -27,10 +27,6 @@ C10_DECLARE_REGISTRY(FreeCudaMemoryCallbacksRegistry, FreeMemoryCallback);
 #define REGISTER_FREE_MEMORY_CALLBACK(name, ...) \
   C10_REGISTER_CLASS(FreeCudaMemoryCallbacksRegistry, name, __VA_ARGS__);
 
-typedef void (*evict_func_t)();
-C10_CUDA_API void set_evict_func(evict_func_t);
-C10_CUDA_API evict_func_t get_evict_func();
-
 namespace cuda {
 
 // TODO: Turn this into an honest to goodness class. I briefly attempted to do

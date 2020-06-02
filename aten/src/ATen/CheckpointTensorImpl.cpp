@@ -22,7 +22,7 @@ struct Timer {
   ~Timer();
 };
 
-bool stats = true;
+constexpr bool stats = true;
 
 struct PerfStats {
   using TimerStats = std::tuple<std::string, Time, Time, Duration>;
@@ -109,10 +109,6 @@ long current_memory() {
   return device_stat.allocated_bytes[0].current;
 }
 
-void checkpoint_auto_evict() {
-  pool.auto_evict();
-}
-
 void CheckpointPool::auto_evict() {
   STATS.track("CheckpointPool::auto_evict");
   if (has_memory_budget) {
@@ -165,10 +161,7 @@ void CheckpointPool::evict() {
   }
 }
 
-CheckpointPool::CheckpointPool() {
-  STATS.track("CheckpointPool::CheckpointPool");
-  c10::set_evict_func(checkpoint_auto_evict);
-}
+CheckpointPool::CheckpointPool() { }
 
 bool use_log = false;
 
@@ -331,6 +324,7 @@ void Rematerializer::remat() {
   }
   Tensors ts = uncheckpoint(inputs);
   auto ret = func(ts);
+  pool.auto_evict();
   TORCH_CHECK(ret.size() == outputs.size());
   for (size_t i = 0; i < outputs.size(); ++i) {
     if (auto output_cell = outputs[i].lock()) {
@@ -422,24 +416,22 @@ void swap(int* a, int* b)
 std::set<ecn_ptr> AliasPool::neighbor_ecn() {
   STATS.track("AliasPool::neighbor_ecn");
   std::set<ecn_ptr> ptr_set;
-
   STATS.track("AliasPool::neighbor_ecn(process nodes)");
-  int back = neighbors.size() - 1;
-  for (size_t i = 0; i < back;) {
+  int size = neighbors.size();
+  for (size_t i = 0; i < size;) {
     if (auto cptc = neighbors[i].lock()) {
-      STATS.track("AliasPool::neighbor_ecn(true-branch)");
       if (cptc->pool->ecn) {
         ptr_set.insert(cptc->pool->ecn);
       }
       ++i;
     } else {
-      STATS.track("AliasPool::neighbor_ecn(false-branch)");
-      neighbors[i] = neighbors[back];
-      back = back - 1;
+      neighbors[i] = neighbors[size - 1];
+      size = size - 1;
     }
   }
-
-  neighbors.erase(neighbors.begin() + back);
+  if (size < neighbors.size()) {
+    neighbors.erase(neighbors.begin() + size);
+  }
   return ptr_set;
 }
 
@@ -539,6 +531,7 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
   time_t pre = std::chrono::system_clock::now();
   auto raw_outputs = remat_f(raw_inputs);
   time_t post = std::chrono::system_clock::now();
+  pool.auto_evict();
   std::vector<intrusive_ptr<External>> outputs;
   std::vector<int> aliases;
   weaks weak_outputs;
