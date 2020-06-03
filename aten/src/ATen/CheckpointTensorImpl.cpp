@@ -160,7 +160,7 @@ void CheckpointPool::evict() {
                          };
   std::random_device rd;
   std::mt19937 gen(rd());
-  std::uniform_int_distribution<> distrib(1, 10 * std::max(1, static_cast<int>(std::sqrt(aps.size()))));
+  std::uniform_int_distribution<> distrib(1, 1 * std::max(1, static_cast<int>(std::sqrt(aps.size()))));
   for (size_t i = 0; i < aps.size();) {
     auto cannot_evict = [&]() {
                           shrinked = true;
