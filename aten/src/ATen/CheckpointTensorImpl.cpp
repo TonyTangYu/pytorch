@@ -4,6 +4,8 @@
 
 #include <chrono>
 #include <string>
+#include <random>
+#include <cmath>
 
 namespace at {
 
@@ -156,6 +158,9 @@ void CheckpointPool::evict() {
                            aps[i] = aps[aps.size() - 1];
                            aps.pop_back();
                          };
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<> distrib(1, 10 * std::max(1, static_cast<int>(std::sqrt(aps.size()))));
   for (size_t i = 0; i < aps.size();) {
     auto cannot_evict = [&]() {
                           shrinked = true;
@@ -176,7 +181,7 @@ void CheckpointPool::evict() {
           evict_idx = i;
         }
       }
-      ++i;
+      i += distrib(gen);
     }
   }
   if (evict_idx == -1) {
