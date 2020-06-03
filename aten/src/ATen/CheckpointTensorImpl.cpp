@@ -158,8 +158,6 @@ void CheckpointPool::evict() {
                            aps[i] = aps[aps.size() - 1];
                            aps.pop_back();
                          };
-  std::random_device rd;
-  std::mt19937 gen(rd());
   std::uniform_int_distribution<> distrib(1, 1 * std::max(1, static_cast<int>(std::sqrt(aps.size()))));
   for (size_t i = 0; i < aps.size();) {
     auto cannot_evict = [&]() {
@@ -559,6 +557,7 @@ struct MakeRawResult {
 
 void add_neighbor(const strong& l, const strong& r) {
   l->pool->neighbors.push_back(weak(r));
+  r->pool->neighbors.push_back(weak(l));
 }
 
 // remat take a single vector of tensors,
@@ -607,7 +606,7 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
   remat->outputs = weak_outputs;
   for (size_t i = 0; i < inputs.size(); ++i) {
     for (size_t j = 0; j < outputs.size(); ++j) {
-      if (is_alias(raw_inputs[i], raw_outputs[j])) {
+      if (!is_alias(raw_inputs[i], raw_outputs[j])) {
         add_neighbor(inputs[i], outputs[j]->value);
       }
     }

@@ -3,6 +3,7 @@
 #include <atomic>
 #include <memory>
 #include <numeric>
+#include <random>
 
 #include <c10/core/Backend.h>
 #include <c10/core/MemoryFormat.h>
@@ -430,6 +431,8 @@ struct CheckpointTensorImpl : TensorImpl {
 struct CheckpointPool {
   std::vector<weak_intrusive_ptr<AliasPool>> aps;
   std::vector<weak_intrusive_ptr<External>> exts;
+  std::random_device rd;
+  std::mt19937 gen = std::mt19937(rd());
   bool has_memory_budget = false;
   long memory_budget;
   void evict();
