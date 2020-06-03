@@ -94,6 +94,28 @@ struct PerfStats {
 
 static PerfStats STATS = PerfStats();
 
+size_t memory_sum = 0;
+size_t memory_max = 0;
+size_t memory_count = 0;
+
+void reset_memory_stat() {
+  memory_sum = 0;
+  memory_max = 0;
+  memory_count = 0;
+}
+
+inline size_t memory(const Tensor& t) {
+  if (! t.has_storage()) {
+    return 0;
+  }
+  auto& storage = t.storage();
+  size_t res = storage.numel() * storage.itemsize();
+  memory_sum += res;
+  memory_max = std::max(memory_max, res);
+  memory_count += 1;
+  return res;
+}
+
 Timer::~Timer() {
   Time now = Clock::now();
   Duration elapsed = now - start;
@@ -102,6 +124,11 @@ Timer::~Timer() {
 }
 
 CheckpointPool pool;
+void CheckpointPool::add(const intrusive_ptr<AliasPool>& p) {
+  if (p->memory > 0 && (memory_count == 0 || p->memory >= 0.01 * double(memory_sum/memory_count))) {
+    aps.push_back(weak_intrusive_ptr<AliasPool>(p));
+  }
+}
 
 long current_memory() {
   STATS.track("current_memory");
@@ -137,7 +164,11 @@ void CheckpointPool::evict() {
     auto ap_strong = aps[i].lock();
     if (!ap_strong.defined()) {
       cannot_evict();
-    } else {
+    }
+    else if (ap_strong->ecn) {
+      cannot_evict();
+    }
+    else {
       if (ap_strong->evictable()) {
         double score = ap_strong->score(current_time);
         if (score < evict_score) {
@@ -297,9 +328,9 @@ void AliasPool::evict() {
     merge<CheckpointInfo>(merge_cpi, ecn, necn);
   }
   auto b4 = current_memory();
-  // cTORCH_CHECK(memory > 0);
-  // TORCH_CHECK(lock_count == 0);
-  // TORCH_CHECK(!is_evicted);
+  TORCH_CHECK(memory > 0);
+  TORCH_CHECK(lock_count == 0);
+  TORCH_CHECK(!is_evicted);
   is_evicted = true;
   for (const weak& w : tensors) {
     if (auto cell = w.lock()) {
@@ -320,9 +351,7 @@ double AliasPool::score(time_t current_time) {
 }
 
 void External::release_resources() {
-  if (value->remat) {
-    value->evict();
-  }
+  value->pool->release_external();
   value.reset();
 }
 
@@ -428,7 +457,6 @@ void swap(int* a, int* b)
 std::set<ecn_ptr> AliasPool::neighbor_ecn() {
   STATS.track("AliasPool::neighbor_ecn");
   std::set<ecn_ptr> ptr_set;
-  STATS.track("AliasPool::neighbor_ecn(process nodes)");
   int size = neighbors.size();
   for (size_t i = 0; i < size;) {
     if (auto cptc = neighbors[i].lock()) {
@@ -457,7 +485,7 @@ void AliasPool::set_not_evicted(const intrusive_ptr<AliasPool>& self) {
       update_t(ecn, CheckpointInfo(cpi.compute_cost - head_remat->compute_cost));
       ecn.reset();
     }
-    pool.aps.push_back(weak_intrusive_ptr<AliasPool>(self));
+    pool.add(self);
   }
 }
 
@@ -556,9 +584,7 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
     if (alias == -1) {
       auto m = memory(t);
       alias_pool = intrusive_ptr<AliasPool>::make(Unsafe(), remat, m);
-      if (m > 0) {
-        pool.aps.push_back(weak_intrusive_ptr<AliasPool>(alias_pool));
-      }
+      pool.add(alias_pool);
     }
     else {
       alias_pool = inputs[alias]->pool;

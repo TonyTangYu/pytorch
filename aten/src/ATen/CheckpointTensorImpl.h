@@ -21,8 +21,8 @@
 #include <ATen/Tensor.h>
 #include <ATen/ATen.h>
 
-#define likely(x)      __builtin_expect(!!(x), 1) 
-#define unlikely(x)    __builtin_expect(!!(x), 0) 
+#define likely(x)      __builtin_expect(!!(x), 1)
+#define unlikely(x)    __builtin_expect(!!(x), 0)
 
 // System Description:
 // Every Tensor is managed by a CheckpointTensor,
@@ -120,13 +120,7 @@ intrusive_ptr<EquivalentClassNode<T>> merge(const std::function<T(const T&, cons
   return r;
 }
 
-inline size_t memory(const Tensor& t) {
-  if (! t.has_storage()) {
-    return 0;
-  }
-  auto& storage = t.storage();
-  return storage.numel() * storage.itemsize();
-}
+size_t memory(const Tensor& t);
 
 template<typename T>
 struct RefCell final : intrusive_ptr_target {
@@ -229,6 +223,7 @@ struct AliasPool : intrusive_ptr_target {
   // so, it is crucial that we dont try to evict those tensors - doing so will not evict anything.
   // lock_count count how many time a tensor is referenced by get.
   size_t lock_count = 0;
+  size_t external_count = 0;
   void lock() {
     ++lock_count;
   }
@@ -253,6 +248,19 @@ struct AliasPool : intrusive_ptr_target {
   ecn_ptr ecn;
   double score(time_t current_time);
   void evict();
+  void register_external() {
+    ++external_count;
+  }
+  void release_external() {
+    --external_count;
+    if (external_count == 0) {
+      if (lock_count > 0) {return;}
+      TORCH_CHECK(lock_count == 0);
+      if (memory > 0 && (!ecn) && head_remat) {
+        evict();
+      }
+    }
+  }
   // if it was evicted, refresh it. otherwise do nothing.
   // have to check so, because when we rematerialize a single tensor in an aliaspool,
   // we will set it to non-evicted, and when we rematerialize it's tensor they will also reset this.
@@ -335,16 +343,18 @@ struct CheckpointTensorCell : intrusive_ptr_target {
 // We keep this invariant by only allowing CheckpointTensorImpl to make new External,
 // When new CheckpointTensorImpl is constructed.
 struct External : intrusive_ptr_target {
-  External(const strong& value) : value(value) { }
+  External(const strong& value) : value(value) {
+    value->pool->register_external();
+  }
   External(const Tensor& value) :
-    value(intrusive_ptr<CheckpointTensorCell>::make(value,
-                                                    intrusive_ptr<AliasPool>::make(Unsafe(),
-                                                                                   intrusive_ptr<Rematerializer>(),
-                                                                                   memory(value)))) { }
+    External(strong::make(value,
+                          intrusive_ptr<AliasPool>::make(Unsafe(),
+                                                         intrusive_ptr<Rematerializer>(),
+                                                         memory(value)))) { }
   External(const Tensor& value,
            const intrusive_ptr<AliasPool>& pool,
            const intrusive_ptr<Rematerializer>& remat) :
-    value(intrusive_ptr<CheckpointTensorCell>::make(value, pool, remat)) { }
+    External(strong::make(value, pool, remat)) { }
   strong value;
   void release_resources() override;
 };
@@ -425,6 +435,7 @@ struct CheckpointPool {
   void evict();
   void auto_evict();
   void clear_checkpointpool();
+  void add(const intrusive_ptr<AliasPool>&);
   CheckpointPool();
 };
 
