@@ -34,7 +34,7 @@ struct PerfStats {
 
   PerfStats() : start(Clock::now()), calls(0), timers() {}
 
-  Timer track(std::string name) {
+  /*Timer track(std::string name) {
     if (stats) {
     auto it = this->calls.find(name);
     if (it != this->calls.end()) {
@@ -46,7 +46,8 @@ struct PerfStats {
     return Timer(name, Clock::now());
     }
     return Timer();
-  }
+    }*/
+  void track(const char*) { }
 
   ~PerfStats() {
     if (!stats) { return; }
@@ -127,7 +128,7 @@ Timer::~Timer() {
 
 CheckpointPool pool;
 void CheckpointPool::add(const intrusive_ptr<AliasPool>& p) {
-  if (p->memory > 0 && (true || memory_count == 0 || p->memory >= 0.01 * double(memory_sum/memory_count))) {
+  if (p->memory > 0 && (memory_count == 0 || p->memory >= 0.01 * double(memory_sum/memory_count))) {
     aps.push_back(weak_intrusive_ptr<AliasPool>(p));
   }
 }
@@ -179,8 +180,7 @@ void CheckpointPool::evict() {
           evict_idx = i;
         }
       }
-      i += 1;
-      //i += distrib(gen);
+      i += distrib(gen);
     }
   }
   if (evict_idx == -1) {

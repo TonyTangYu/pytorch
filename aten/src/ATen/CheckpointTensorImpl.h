@@ -24,6 +24,7 @@
 
 #define likely(x)      __builtin_expect(!!(x), 1)
 #define unlikely(x)    __builtin_expect(!!(x), 0)
+#define TORCH_CHECK(x) // profile mode
 
 // System Description:
 // Every Tensor is managed by a CheckpointTensor,
