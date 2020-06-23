@@ -153,13 +153,14 @@ void CheckpointPool::evict() {
   TORCH_CHECK(aps.size() > 0);
   bool shrinked = false;
   int evict_idx = -1;
-  double evict_score = INFINITY;
+  double evict_cost = INFINITY;
   time_t current_time = std::chrono::system_clock::now();
   auto remove_from_aps = [&](size_t i) {
                            aps[i] = aps[aps.size() - 1];
                            aps.pop_back();
                          };
   std::uniform_int_distribution<> distrib(1, 1 * std::max(1, static_cast<int>(std::sqrt(aps.size()))));
+  // sampling a random independent subset of all evictable tensors to find the cheapest tensor to evict.
   for (size_t i = 0; i < aps.size();) {
     auto cannot_evict = [&]() {
                           shrinked = true;
@@ -174,9 +175,9 @@ void CheckpointPool::evict() {
     }
     else {
       if (ap_strong->evictable()) {
-        double score = ap_strong->score(current_time);
-        if (score < evict_score) {
-          evict_score = score;
+        double cost = ap_strong->cost(current_time);
+        if (cost < evict_cost) {
+          evict_cost = cost;
           evict_idx = i;
         }
       }
@@ -216,14 +217,14 @@ Tensor checkpoint(const Tensor& t) {
 Tensor uncheckpoint(const Tensor& t) {
   STATS.track("uncheckpoint");
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
-  // CHECK(cpti != nullptr);
+  TORCH_CHECK(cpti != nullptr);
   return cpti->ref->value->value->get();
 }
 
 void pin(const Tensor& t) {
   STATS.track("pin");
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
-  // CHECK(cpti != nullptr);
+  TORCH_CHECK(cpti != nullptr);
   cpti->ref->value->value->pin();
 }
 
@@ -302,7 +303,7 @@ Tensors uncheckpoint(const strongs& inputs) {
   Tensors ret;
   ret.reserve(inputs.size());
   for (const strong& input : inputs) {
-    // Jared: inlined manually
+    // inlined manually
     ret.push_back(input->get());
   }
   return ret;
@@ -341,17 +342,17 @@ void AliasPool::evict() {
       cell->evict();
     }
   }
-  // TORCH_CHECK(current_memory() < b4);
+  TORCH_CHECK(current_memory() < b4);
   // somehow it is still evicting unevictable stuff.
 }
 
-double AliasPool::score(time_t current_time) {
+double AliasPool::cost(time_t current_time) {
   auto cpi = head_remat->get_cpi();
   auto ecns = neighbor_ecn();
   for (const auto& necn : ecns) {
     cpi = merge_cpi(cpi, get_t(necn));
   }
-  return cpi.score(memory, (current_time - last_used_time).count());
+  return cpi.cost(memory, (current_time - last_used_time).count());
 }
 
 void External::release_resources() {
@@ -392,71 +393,6 @@ ecn_ptr Rematerializer::get_ecn() {
 CheckpointInfo Rematerializer::get_cpi() {
   return CheckpointInfo(ecn ? duration_t(0) : compute_cost);
 }
-
-// A utility function to swap two elements
-void swap(int* a, int* b)
-{
-    int t = *a;
-    *a = *b;
-    *b = t;
-}
-
-// /* This function is same in both iterative and recursive*/
-// template<typename T>
-// int partition(std::vector<T>& arr, int l, int h)
-// {
-//     int x = arr[h];
-//     int i = (l - 1);
-
-//     for (int j = l; j <= h - 1; j++) {
-//         if (arr[j] <= x) {
-//             i++;
-//             swap(&arr[i], &arr[j]);
-//         }
-//     }
-//     swap(&arr[i + 1], &arr[h]);
-//     return (i + 1);
-// }
-
-// template<typename T>
-// void qsort_dedup(std::vector<T>& arr, int l, int h)
-// {
-//     // Create an auxiliary stack
-//     std::vector<T> stack;
-//     stack.reserve(h - l + 1);
-
-//     // initialize top of stack
-//     int top = -1;
-
-//     // push initial values of l and h to stack
-//     stack[++top] = l;
-//     stack[++top] = h;
-
-//     // Keep popping from stack while is not empty
-//     while (top >= 0) {
-//         // Pop h and l
-//         h = stack[top--];
-//         l = stack[top--];
-
-//         // Set pivot element at its correct position
-//         // in sorted array
-//         int p = partition(arr, l, h);
-
-//         // If there are elements on left side of pivot,
-//         // then push left side to stack
-//         if (p - 1 > l) {
-//             stack[++top] = l;
-//             stack[++top] = p - 1;
-//         }
-
-//         // If there are elements on right side of pivot,
-//         // then push right side to stack
-//         if (p + 1 < h) {
-//             stack[++top] = p + 1;
-//             stack[++top] = h;
-//         }
-//     }
-// }
 
 std::set<ecn_ptr> AliasPool::neighbor_ecn() {
   STATS.track("AliasPool::neighbor_ecn");

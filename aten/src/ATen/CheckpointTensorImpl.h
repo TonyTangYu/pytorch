@@ -155,7 +155,7 @@ using duration_t = std::chrono::system_clock::duration;
 struct CheckpointInfo {
   duration_t compute_cost;
   // @ZACH: Floating Point instability?
-  double score(size_t memory, size_t staleness) const {
+  double cost(size_t memory, size_t staleness) const {
     TORCH_CHECK(memory > 0);
     TORCH_CHECK(staleness > 0);
     return compute_cost.count() / static_cast<double>(memory * staleness);
@@ -248,7 +248,7 @@ struct AliasPool : intrusive_ptr_target {
   }
   // if it is evicted, then hold the evicted tensor group.
   ecn_ptr ecn;
-  double score(time_t current_time);
+  double cost(time_t current_time);
   void evict();
   void register_external() {
     ++external_count;
