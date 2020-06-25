@@ -39,6 +39,7 @@ constexpr bool log_json = true;
 const std::string INSTRUCTION = "INSTRUCTION";
 const std::string ANNOTATION = "ANNOTATION";
 const std::string RELEASE = "RELEASE";
+const std::string PIN = "PIN";
 const std::string TIME = "TIME";
 const std::string ARGS = "ARGS";
 const std::string MEMORY = "MEMORY";
@@ -139,14 +140,25 @@ void DTRLogMutate(const std::string& name,
   }
 }
 
-void DTRLogRelease(const std::string& counter_name) {
+void DTRLogRelease(const std::string& name) {
   if (log_json) {
     json j;
     j[INSTRUCTION] = RELEASE;
-    j[NAME] = counter_name;
+    j[NAME] = name;
     DTRLogger::logger().log(j.dump());
   } else {
-    DTRLogger::logger().log(RELEASE + ": " + counter_name);
+    DTRLogger::logger().log(RELEASE + ": " + name);
+  }
+}
+
+void DTRLogPin(const std::string& name) {
+  if (log_json) {
+    json j;
+    j[INSTRUCTION] = PIN;
+    j[NAME] = name;
+    DTRLogger::logger().log(j.dump());
+  } else {
+    DTRLogger::logger().log(RELEASE + ": " + name);
   }
 }
 

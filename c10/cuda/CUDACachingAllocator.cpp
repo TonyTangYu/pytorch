@@ -22,15 +22,6 @@ namespace c10 {
 
 C10_DEFINE_REGISTRY(FreeCudaMemoryCallbacksRegistry, FreeMemoryCallback);
 
-evict_func_t evict_func = nullptr;
-void set_evict_func(evict_func_t ef) {
-  evict_func = ef;
-}
-
-evict_func_t get_evict_func() {
-  return evict_func;
-}
-
 namespace cuda {
 namespace CUDACachingAllocator {
 
@@ -210,19 +201,7 @@ class THCCachingAllocator {
   // Thus, do not call a public method from another public method.
 
   /** allocates a block which is safe to use from the provided stream */
-  // Technically speaking, it is still allocating more memory then it should,
-  // But it doesn't do anything with it until more memory are found, so it is morally ok - no experimental result will be changed.
-  // TODO: fix it and make it to be always below limit, so ppl can set the limit to be GPU max memory and it will still work.
   void malloc(void** devPtr, size_t size, cudaStream_t stream)
-  {
-    malloc_inner(devPtr, size, stream);
-    auto evict_func = get_evict_func();
-    if (evict_func) {
-      (*evict_func)();
-    }
-  }
-
-  void malloc_inner(void** devPtr, size_t size, cudaStream_t stream)
   {
     std::lock_guard<std::recursive_mutex> lock(mutex);
     int device;
