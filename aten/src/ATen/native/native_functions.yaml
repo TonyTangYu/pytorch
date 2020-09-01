@@ -54,6 +54,9 @@
 - func: compute_time() -> int
   variants: function
 
+- func: toggle_profile(bool profile) -> ()
+  variants: function
+
 # Temporary type cast operators. These are needed to trace type-casts now since
 # Type's are not supported in the IR. Instead, we call down to these
 # specialized operators for each datatype.
