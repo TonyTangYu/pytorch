@@ -3101,7 +3101,7 @@
     CUDA: split
     Checkpoint: checkpoint_split
 
-- func: split_backward(Tensor[] grads, int split_size, int dim, int[] sizes, ScalarType dtype, Layout layout, Device device, bool pin_memory=False) -> Tensor
+- func: split_backward(Tensor[] grads, int split_size, int dim, int[] sizes, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor
   variants: function
   dispatch:
     CPU: split_backward
@@ -3122,7 +3122,7 @@
     CUDA: split_with_sizes
     Checkpoint: checkpoint_split_with_sizes
 
-- func: split_with_sizes_backward(Tensor[] grads, int[] split_sizes, int dim, int[] sizes, ScalarType dtype, Layout layout, Device device, bool pin_memory=False) -> Tensor
+- func: split_with_sizes_backward(Tensor[] grads, int[] split_sizes, int dim, int[] sizes, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor
   variants: function
   dispatch:
     CPU: split_with_sizes_backward
