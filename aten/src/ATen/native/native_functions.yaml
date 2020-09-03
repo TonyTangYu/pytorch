@@ -48,7 +48,7 @@
 - func: unset_memory_budget() -> ()
   variants: function
 
-- func: reset_compute_time() -> ()
+- func: reset_profile() -> ()
   variants: function
 
 - func: compute_time() -> int
