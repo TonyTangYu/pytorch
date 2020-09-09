@@ -3889,6 +3889,7 @@
   dispatch:
     CPU, CUDA: sub_
     SparseCPU, SparseCUDA: sub_sparse_
+    Checkpoint: checkpoint_sub_
 
 # For C++ only, until we have conversion from C++ numbers to Tensor
 - func: sub.Scalar(Tensor self, Scalar other, Scalar alpha=1) -> Tensor
@@ -3909,9 +3910,6 @@
 - func: subtract_.Tensor(Tensor(a!) self, Tensor other, *, Scalar alpha=1) -> Tensor(a!)
   use_c10_dispatcher: full
   variants: method
-  dispatch:
-    CPU, CUDA, SparseCPU, SparseCUDA: subtract_
-    Checkpoint: checkpoint_subtract_
 
 # For C++ only, until we have conversion from C++ numbers to Tensor
 - func: subtract.Scalar(Tensor self, Scalar other, Scalar alpha=1) -> Tensor
