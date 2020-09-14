@@ -126,6 +126,13 @@ Timer::~Timer() {
   STATS.timers.push_back(stats);
 }
 
+bool use_log_ = false;
+bool use_profile_ = false;
+long base_compute_time_ = 0;
+long remat_compute_time_ = 0;
+long search_time_ = 0;
+long cost_time_ = 0;
+
 CheckpointPool pool;
 void CheckpointPool::add(const intrusive_ptr<AliasPool>& p) {
   if (p->memory > 0 && (memory_count == 0 || p->memory >= 0.01 * double(memory_sum/memory_count))) {
@@ -149,6 +156,7 @@ void CheckpointPool::auto_evict() {
 }
 
 void CheckpointPool::evict() {
+  time_t pre = std::chrono::system_clock::now();
   STATS.track("CheckpointPool::evict");
   TORCH_CHECK(aps.size() > 0);
   bool shrinked = false;
@@ -195,13 +203,11 @@ void CheckpointPool::evict() {
                           };
     evict_from_idx(evict_idx);
   }
+  time_t post = std::chrono::system_clock::now();
+  search_time_ += (post - pre).count();
 }
 
 CheckpointPool::CheckpointPool() { }
-
-bool use_log_ = false;
-bool use_profile_ = false;
-long compute_time_ = 0;
 
 namespace native {
 
@@ -285,7 +291,10 @@ void set_memory_budget(long budget) {
 }
 
 void reset_profile() {
-  compute_time_ = 0;
+  base_compute_time_ = 0;
+  remat_compute_time_ = 0;
+  search_time_ = 0;
+  cost_time_ = 0;
 }
 
 void toggle_profile(bool profile) {
@@ -293,7 +302,27 @@ void toggle_profile(bool profile) {
 }
 
 long compute_time() {
-  return compute_time_;
+  return base_compute_time() + remat_compute_time();
+}
+
+long cost_time() {
+  return cost_time_;
+}
+
+long search_time() {
+  return search_time_;
+}
+
+long remat_compute_time() {
+  return remat_compute_time_;
+}
+
+long base_compute_time() {
+  return base_compute_time_;
+}
+
+long loop_time() {
+  return search_time() - cost_time();
 }
 
 }
@@ -337,8 +366,6 @@ void AliasPool::evict() {
   for (const auto& necn : ecns) {
     merge<CheckpointInfo>(merge_cpi, ecn, necn);
   }
-  // cudacaching allocator might be dead when program finished and is deallocating resources.
-  // auto b4 = current_memory();
   TORCH_CHECK(memory > 0);
   TORCH_CHECK(lock_count == 0);
   TORCH_CHECK(!is_evicted);
@@ -348,16 +375,19 @@ void AliasPool::evict() {
       cell->evict();
     }
   }
-  // TORCH_CHECK(current_memory() < b4);
 }
 
 double AliasPool::cost(time_t current_time) {
+  time_t pre = std::chrono::system_clock::now();
   auto cpi = head_remat->get_cpi();
   auto ecns = neighbor_ecn();
   for (const auto& necn : ecns) {
     cpi = merge_cpi(cpi, get_t(necn));
   }
-  return cpi.cost(memory, (current_time - last_used_time).count());
+  auto ret = cpi.cost(memory, (current_time - last_used_time).count());
+  time_t post = std::chrono::system_clock::now();
+  cost_time_ += (post - pre).count();
+  return ret;
 }
 
 void External::release_resources() {
@@ -375,7 +405,7 @@ void Rematerializer::remat() {
   auto ret = func(ts);
   time_t post = std::chrono::system_clock::now();
   pool.auto_evict();
-  compute_time_ += (post - pre).count();
+  remat_compute_time_ += (post - pre).count();
   TORCH_CHECK(ret.size() == outputs.size());
   for (size_t i = 0; i < outputs.size(); ++i) {
     if (auto output_cell = outputs[i].lock()) {
@@ -521,7 +551,7 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
   auto raw_outputs = remat_f(raw_inputs);
   time_t post = std::chrono::system_clock::now();
   pool.auto_evict();
-  compute_time_ += (post - pre).count();
+  base_compute_time_ += (post - pre).count();
   std::vector<intrusive_ptr<External>> outputs;
   std::vector<int> aliases;
   weaks weak_outputs;

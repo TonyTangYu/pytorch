@@ -51,7 +51,28 @@
 - func: reset_profile() -> ()
   variants: function
 
+# the compute time of kernel, ignoring remat
+- func: base_compute_time() -> int
+  variants: function
+
+# the compute time of remat kernel
+- func: remat_compute_time() -> int
+  variants: function
+
+# base_compute_time() + remat_compute_time()
 - func: compute_time() -> int
+  variants: function
+
+# total time spent in searching.
+- func: search_time() -> int
+  variants: function
+
+# total time spent in evaluating cost
+- func: cost_time() -> int
+  variants: function
+
+# time spent looping over tensors. search_time() - cost_time()
+- func: loop_time() -> int
   variants: function
 
 - func: toggle_profile(bool profile) -> ()
