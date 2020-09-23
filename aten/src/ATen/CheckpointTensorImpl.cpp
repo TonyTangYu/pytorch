@@ -128,6 +128,9 @@ Timer::~Timer() {
 
 bool use_log_ = false;
 bool use_profile_ = false;
+bool use_ignore_small_tensor_ = true;
+bool use_random_sampling_ = true;
+bool use_batched_eviction_ = true;
 long base_compute_time_ = 0;
 long remat_compute_time_ = 0;
 long search_time_ = 0;
@@ -135,7 +138,7 @@ long cost_time_ = 0;
 
 CheckpointPool pool;
 void CheckpointPool::add(const intrusive_ptr<AliasPool>& p) {
-  if (p->memory > 0 && (memory_count == 0 || p->memory >= 0.01 * double(memory_sum/memory_count))) {
+  if (p->memory > 0 && ((!use_ignore_small_tensor_) || memory_count == 0 || p->memory >= 0.01 * double(memory_sum/memory_count))) {
     aps.push_back(weak_intrusive_ptr<AliasPool>(p));
   }
 }
@@ -167,41 +170,55 @@ void CheckpointPool::evict() {
                            aps[i] = aps[aps.size() - 1];
                            aps.pop_back();
                          };
-  std::uniform_int_distribution<> distrib(1, 1 * std::max(1, static_cast<int>(std::sqrt(aps.size()))));
+  std::uniform_int_distribution<> distrib(1, std::max(1, static_cast<int>(std::sqrt(aps.size()))));
   // sampling a random independent subset of all evictable tensors to find the cheapest tensor to evict.
-  for (size_t i = 0; i < aps.size();) {
-    auto cannot_evict = [&]() {
-                          shrinked = true;
-                          remove_from_aps(i);
-                        };
-    auto ap_strong = aps[i].lock();
-    if (!ap_strong.defined()) {
-      cannot_evict();
-    }
-    else if (ap_strong->ecn) {
-      cannot_evict();
-    }
-    else {
-      if (ap_strong->evictable()) {
-        double cost = ap_strong->cost(current_time);
-        if (cost < evict_cost) {
-          evict_cost = cost;
-          evict_idx = i;
-        }
+  auto loop = [&](const auto& func) {
+    for (size_t i = 0; i < aps.size();) {
+      auto cannot_evict = [&]() {
+                            shrinked = true;
+                            remove_from_aps(i);
+                          };
+      auto ap_strong = aps[i].lock();
+      if (!ap_strong.defined()) {
+        cannot_evict();
       }
-      i += distrib(gen);
+      else if (ap_strong->ecn) {
+        cannot_evict();
+      }
+      else {
+        if (ap_strong->evictable()) {
+          func(i, ap_strong);
+        }
+        // cannot call cannot_evict() to flush it out of the list, because it might just be locked.
+        i += use_random_sampling_ ? distrib(gen) : 1;
+      }
     }
-  }
+  };
+  loop([&](size_t i, const auto& ap_strong) {
+    double cost = ap_strong->cost(current_time);
+    if (cost < evict_cost) {
+      evict_cost = cost;
+      evict_idx = i;
+    }
+  });
   if (evict_idx == -1) {
     TORCH_CHECK(shrinked);
   } else {
-    auto evict_from_idx = [&](size_t idx) {
-                            auto ap_strong = aps[idx].lock();
-                            TORCH_CHECK(ap_strong.defined());
-                            ap_strong->evict();
-                            remove_from_aps(evict_idx);
-                          };
-    evict_from_idx(evict_idx);
+    {
+      auto ap_strong = aps[evict_idx].lock();
+      TORCH_CHECK(ap_strong.defined());
+      ap_strong->evict();
+      remove_from_aps(evict_idx);
+    }
+    if (use_batched_eviction_) {
+      loop([&](size_t i, const auto& ap_strong) {
+        double cost = ap_strong->cost(current_time);
+        if (cost <= 2 * evict_cost) {
+          ap_strong->evict();
+          remove_from_aps(i);
+        }
+      });
+    }
   }
   time_t post = std::chrono::system_clock::now();
   search_time_ += (post - pre).count();
@@ -299,6 +316,18 @@ void reset_profile() {
 
 void toggle_profile(bool profile) {
   use_profile_ = profile;
+}
+
+void toggle_ignore_small_tensor(bool toggle) {
+  use_ignore_small_tensor_ = toggle;
+}
+
+void toggle_batched_eviction(bool toggle) {
+  use_batched_eviction_ = toggle;
+}
+
+void toggle_random_sampling(bool toggle) {
+  use_random_sampling_ = toggle;
 }
 
 long compute_time() {

@@ -78,6 +78,15 @@
 - func: toggle_profile(bool profile) -> ()
   variants: function
 
+- func: toggle_ignore_small_tensor(bool ignore) -> ()
+  variants: function
+
+- func: toggle_random_sampling(bool ignore) -> ()
+  variants: function
+
+- func: toggle_batched_eviction(bool ignore) -> ()
+  variants: function
+
 # Temporary type cast operators. These are needed to trace type-casts now since
 # Type's are not supported in the IR. Instead, we call down to these
 # specialized operators for each datatype.
