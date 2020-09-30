@@ -1,11 +1,12 @@
+#include <ATen/cuda/CUDAEvent.h>
 #include <ATen/CheckpointTensorImpl.h>
 #include <ATen/Logger.h>
 #include <c10/cuda/CUDACachingAllocator.h>
-
 #include <chrono>
 #include <string>
 #include <random>
 #include <cmath>
+#include <thread>
 
 namespace at {
 
@@ -192,6 +193,7 @@ void CheckpointPool::evict() {
           func(i, ap_strong);
         }
         // cannot call cannot_evict() to flush it out of the list, because it might just be locked.
+        // todo: each checkpointtensorimpl record where it is on the list, and we can flush all non evictable value out?
         i += use_random_sampling_ ? distrib(gen) : 1;
       }
     }
@@ -459,11 +461,16 @@ void Rematerializer::remat() {
     s->pool->lock();
   }
   Tensors ts = uncheckpoint(inputs);
-  time_t pre = std::chrono::system_clock::now();
+  at::cuda::CUDAEvent start(cudaEventDefault);
+  start.record();
   auto ret = func(ts);
-  time_t post = std::chrono::system_clock::now();
+  at::cuda::CUDAEvent end(cudaEventDefault);
+  end.record();
+  std::thread([start{std::move(start)}, end{std::move(end)}]() {
+      end.synchronize();
+      remat_compute_time_ += long(start.elapsed_time(end) * 1e6);
+    }).detach();
   pool.auto_evict();
-  remat_compute_time_ += (post - pre).count();
   TORCH_CHECK(ret.size() == outputs.size());
   for (size_t i = 0; i < outputs.size(); ++i) {
     if (auto output_cell = outputs[i].lock()) {
@@ -585,7 +592,6 @@ int get_alias(const Tensors& ts, const Tensor& t) {
 struct MakeRawResult {
   std::vector<intrusive_ptr<External>> outputs;
   std::vector<int> aliases;
-  duration_t time;
   intrusive_ptr<Rematerializer> rematerializer;
 };
 
@@ -606,16 +612,19 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
     s->pool->lock();
   }
   Tensors raw_inputs = uncheckpoint(inputs);
-  time_t pre = std::chrono::system_clock::now();
+  at::cuda::CUDAEvent start(cudaEventDefault);
+  start.record();
   auto raw_outputs = remat_f(raw_inputs);
-  time_t post = std::chrono::system_clock::now();
+  at::cuda::CUDAEvent end(cudaEventDefault);
+  end.record();
   pool.auto_evict();
-  base_compute_time_ += (post - pre).count();
   std::vector<intrusive_ptr<External>> outputs;
   std::vector<int> aliases;
   weaks weak_outputs;
-  auto remat = intrusive_ptr<Rematerializer>::make(Unsafe(), remat_f, inputs, post - pre);
-
+  auto remat = intrusive_ptr<Rematerializer>::make(Unsafe(), remat_f, inputs);
+  std::vector<intrusive_ptr<AliasPool>> pools;
+  // update all remat_time in the pools
+  // error: this will double count. but alias creation stuff is slow so maybe ok?
   for (const Tensor& t : raw_outputs) {
     intrusive_ptr<AliasPool> alias_pool;
     int alias = get_alias(raw_inputs, t);
@@ -626,9 +635,6 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
     }
     else {
       alias_pool = inputs[alias]->pool;
-      if (alias_pool->head_remat) {
-        alias_pool->head_remat->compute_cost += (post - pre);
-      }
     }
     auto e = intrusive_ptr<External>::make(t, alias_pool, remat);
     pool.exts.push_back(weak_intrusive_ptr<External>(e));
@@ -648,7 +654,21 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
   for (const strong& s : inputs) {
     s->pool->unlock();
   }
-  return {outputs, aliases, post - pre, remat};
+  for (const auto& pool: pools) {
+    pool->lock();
+  }
+  std::thread([start{std::move(start)}, end{std::move(end)}, pools{std::move(pools)}]() {
+      end.synchronize();
+      long time = start.elapsed_time(end) * 1e6;
+      base_compute_time_ += time;
+      for (const auto& pool: pools) {
+        if (pool->head_remat) {
+          pool->head_remat->compute_cost += duration_t(time);
+        }
+        pool->unlock();
+      }
+    }).detach();
+  return {outputs, aliases, remat};
 }
 
 std::string from_time(duration_t t) {
@@ -695,7 +715,7 @@ Tensors CheckpointTensorImpl::make(const std::string& name,
       res.push_back(get_cpti(tensor)->counter_name());
     }
 
-    DTRLogCall(res, name, args, from_time(ret.time));
+    DTRLogCall(res, name, args);
     for (size_t i = 0; i < tensors.size(); ++i) {
       Tensor t = tensors[i];
       auto cpti = get_cpti(t);
@@ -737,7 +757,7 @@ void CheckpointTensorImpl::mutate(const std::string& name,
     cell_from_tensor(inputs[idx])->value = modified[idx];
   }
   if (use_log_) {
-    DTRLogMutate(name, args, mutate_idx, from_time(ret.time));
+    DTRLogMutate(name, args, mutate_idx);
   }
 }
 

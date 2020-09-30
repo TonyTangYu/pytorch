@@ -108,15 +108,13 @@ void DTRLogCopy(const std::string& new_name, const std::string& old_name) {
 
 void DTRLogMutate(const std::string& name,
                   const std::vector<std::string>& args,
-                  const std::vector<size_t>& mutate,
-                  const std::string& time) {
+                  const std::vector<size_t>& mutate) {
   if (log_json) {
     json j;
     j[INSTRUCTION] = "MUTATE";
     j[NAME] = name;
     j[ARGS] = args;
     j["MUTATE"] = mutate;
-    j[TIME] = time;
     DTRLogger::logger().log(j.dump());
   } else {
     std::string log = name;
@@ -133,9 +131,6 @@ void DTRLogMutate(const std::string& name,
       log += ", ";
     }
     log += ") ";
-    log += TIME;
-    log += ": ";
-    log += time;
     DTRLogger::logger().log(log);
   }
 }
@@ -164,15 +159,13 @@ void DTRLogPin(const std::string& name) {
 
 void DTRLogCall(const std::vector<std::string>& res,
                 const std::string& name,
-                const std::vector<std::string>& args,
-                const std::string& time) {
+                const std::vector<std::string>& args) {
   if (log_json) {
     json j;
     j[INSTRUCTION] = "CALL";
     j[NAME] = name;
     j["RESULT"] = res;
     j[ARGS] = args;
-    j[TIME] = time;
     DTRLogger::logger().log(j.dump());
   } else {
     std::string arg = name + "(";
@@ -188,8 +181,6 @@ void DTRLogCall(const std::vector<std::string>& res,
     }
     log += ") = ";
     log += arg;
-    log += " TIME: ";
-    log += time;
     DTRLogger::logger().log(log);
   }
 }

@@ -78,6 +78,8 @@
 // Note: to code fast I do not use RAII and just assume the code will not try to recover from exception.
 // It should be easy to fix though.
 
+// Note: All timing is stored in nanoseconds.
+
 namespace at {
 
 // TODO: using a pool allocator might make more sense - no need to allocate and delete each pointer individually.
@@ -157,7 +159,7 @@ using rematerialize_function_t = std::function<Tensors(const Tensors&)>;
 using mutate_function_t = std::function<void(const Tensors&)>;
 
 using time_t = std::chrono::time_point<std::chrono::system_clock>;
-using duration_t = std::chrono::system_clock::duration;
+using duration_t = std::chrono::nanoseconds;
 struct CheckpointInfo {
   duration_t compute_cost;
   // @ZACH: Floating Point instability?
@@ -193,7 +195,8 @@ struct Rematerializer : intrusive_ptr_target {
   rematerialize_function_t func;
   strongs inputs;
   weaks outputs;
-  duration_t compute_cost;
+  bool compute_cost_initialized{false};
+  duration_t compute_cost{0};
   // when some output in here get evicted, they should belong to this ecn.
   // a rematerializer have to track this,
   // because when multiple output of a rematerializer get evicted,
@@ -201,11 +204,9 @@ struct Rematerializer : intrusive_ptr_target {
   ecn_ptr ecn;
   Rematerializer(const Unsafe&,
                  const rematerialize_function_t& func,
-                 const strongs& inputs,
-                 duration_t compute_cost)  :
+                 const strongs& inputs) :
     func(func),
-    inputs(inputs),
-    compute_cost(compute_cost) {
+    inputs(inputs) {
   }
   void release_resources() final {
     func = rematerialize_function_t();
