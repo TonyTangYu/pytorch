@@ -6355,6 +6355,7 @@
   dispatch:
     CPU: nll_loss2d_forward_out_cpu
     CUDA: legacy::cuda::_thnn_nll_loss2d_forward_out
+    Checkpoint: checkpoint_nll_loss2d_forward_out
 
 - func: nll_loss2d_forward(Tensor self, Tensor target, Tensor? weight, int reduction, int ignore_index) -> (Tensor output, Tensor total_weight)
   use_c10_dispatcher: full
@@ -6362,12 +6363,14 @@
   dispatch:
     CPU: nll_loss2d_forward_cpu
     CUDA: legacy::cuda::_thnn_nll_loss2d_forward
+    Checkpoint: checkpoint_nll_loss2d_forward
 
 - func: nll_loss2d_backward.grad_input(Tensor grad_output, Tensor self, Tensor target, Tensor? weight, int reduction, int ignore_index, Tensor total_weight, *, Tensor(a!) grad_input) -> Tensor(a!)
   python_module: nn
   dispatch:
     CPU: nll_loss2d_backward_out_cpu
     CUDA: legacy::cuda::_thnn_nll_loss2d_backward_out
+    Checkpoint: checkpoint_nll_loss2d_backward_out
 
 - func: nll_loss2d_backward(Tensor grad_output, Tensor self, Tensor target, Tensor? weight, int reduction, int ignore_index, Tensor total_weight) -> Tensor
   use_c10_dispatcher: full
@@ -6375,6 +6378,7 @@
   dispatch:
     CPU: nll_loss2d_backward_cpu
     CUDA: legacy::cuda::_thnn_nll_loss2d_backward
+    Checkpoint: checkpoint_nll_loss2d_backward
 
 - func: smooth_l1_loss.out(Tensor self, Tensor target, int reduction=Mean, *, Tensor(a!) out) -> Tensor(a!)
   python_module: nn
