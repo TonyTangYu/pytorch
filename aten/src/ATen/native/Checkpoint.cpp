@@ -155,16 +155,11 @@ Tensor& checkpoint_div_(Tensor& a, const Tensor& b) {
 }
 
 Tensor checkpoint_clone(at::Tensor const& a, c10::optional<c10::MemoryFormat> b) {
-  if (b) {
-    rematerialize_function_t rt =
-      [=](const Tensors& vec) -> Tensors {
-        return {at::clone(vec.at(0), b)};
-      };
-    return CheckpointTensorImpl::make("clone", rt, {a})[0];
-  }
-  else {
-    return a;
-  }
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+    return {at::clone(vec.at(0), b)};
+  };
+  return CheckpointTensorImpl::make("clone", rt, {a})[0];
 }
 
 Tensor checkpoint_where(at::Tensor const& a, at::Tensor const& b, at::Tensor const& c) {
