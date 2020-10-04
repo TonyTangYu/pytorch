@@ -24,7 +24,7 @@
 
 #define likely(x)      __builtin_expect(!!(x), 1)
 #define unlikely(x)    __builtin_expect(!!(x), 0)
-#define TORCH_CHECK(a, ...) // profile mode
+//#define TORCH_CHECK(a, ...) // profile mode
 
 // System Description:
 // Every Tensor is managed by a CheckpointTensor,
@@ -63,7 +63,9 @@
 //   and output all the new value of the aliases, then update the Ref.
 //   Of course, the cleaner way is to not support this.
 //   Shame on those who use this feature.
-
+// An operator might return undefined tensor.
+//   Since undefined tensor has special semantic, we dont want to wrap it.
+//   When that is the case we unwrap the tensor and return normal undefined tensor to the user.
 // Memory Safety:
 // The objects here will have lots of backedges.
 // In order to collect memory when computation is completed,
@@ -299,6 +301,7 @@ struct CheckpointTensorCell : intrusive_ptr_target {
     TORCH_CHECK(defined);
     return optional_device_;
   }
+  bool original_requires_grad;
   // A Tensor is evictable iff it's AliasPool is evictable.
   // A evictable tensor must have Rematerializer.
   intrusive_ptr<AliasPool> pool;
@@ -327,7 +330,7 @@ struct CheckpointTensorCell : intrusive_ptr_target {
       remat->remat();
     }
     TORCH_CHECK(t);
-    TORCH_CHECK(! t->key_set().has(DispatchKey::CheckpointTensorId));
+    TORCH_CHECK(! t->key_set().has(DispatchKey::Checkpoint));
     pool->last_used_time = std::chrono::system_clock::now();
     return *t;
   }
@@ -368,10 +371,13 @@ struct External : intrusive_ptr_target {
 };
 
 inline DispatchKeySet convert_key_set(const DispatchKeySet& t) {
-  CHECK(!t.has(DispatchKey::Checkpoint));
+  TORCH_CHECK(!t.has(DispatchKey::Checkpoint));
+  TORCH_CHECK(!t.has(DispatchKey::Autograd));
   auto ret = t.add(DispatchKey::Checkpoint);
   return ret;
 }
+
+struct DETACH { };
 
 struct CheckpointTensorImpl : TensorImpl {
   int id = gen_counter();
@@ -392,10 +398,15 @@ struct CheckpointTensorImpl : TensorImpl {
                ref->value->value->dtype(),
                ref->value->value->optional_device()),
     ref(ref) {
-    if (key_set().has(DispatchKey::Autograd)) {
-      set_requires_grad(true);
+      if (ref->value->value->original_requires_grad) {
+        set_requires_grad(true);
+      }
     }
-  }
+
+  explicit CheckpointTensorImpl(DETACH, const CheckpointTensorImpl& cpti) :
+    TensorImpl(convert_key_set(cpti.ref->value->value->key_set()),
+               cpti.ref->value->value->dtype(),
+               cpti.ref->value->value->optional_device()), ref(cpti.ref) { }
 
   explicit CheckpointTensorImpl(const intrusive_ptr<External>& e) :
     CheckpointTensorImpl(Ref<intrusive_ptr<External>>::make(e)) { }

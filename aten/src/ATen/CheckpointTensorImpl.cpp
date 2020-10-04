@@ -473,18 +473,16 @@ void CheckpointTensorCell::fill(const Tensor& t) {
       defined = true;
       is_undefined_tensor = !t.defined();
       key_set_ = t.key_set();
-      if (t.requires_grad()) {
-        key_set_ = key_set_.add(DispatchKey::Autograd);
-      }
       dtype_ = t.dtype();
       optional_device_ = t.optional_device();
+      original_requires_grad = t.requires_grad();
     }
   }
 }
 
 intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const VariableVersion& version_counter,
                                                                         bool allow_tensor_metadata_change) const {
-  auto ret = intrusive_ptr<CheckpointTensorImpl>::make(ref);
+  auto ret = intrusive_ptr<CheckpointTensorImpl>::make(DETACH {}, *this);
   if (use_log_) {
     DTRLogCopy(ret->counter_name(), counter_name());
   }
@@ -493,7 +491,7 @@ intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const Va
 
 void CheckpointTensorImpl::shallow_copy_from(const c10::intrusive_ptr<TensorImpl>& impl) {
   STATS.track("CheckpointTensorCell::shallow_copy_from");
-  TORCH_CHECK(impl->key_set().has(DispatchKey::CheckpointTensorId));
+  TORCH_CHECK(impl->key_set().has(DispatchKey::Checkpoint));
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(impl.get());
   TORCH_CHECK(cpti != nullptr);
   ref->value = cpti->ref->value;
@@ -645,7 +643,11 @@ Tensors CheckpointTensorImpl::make(const std::string& name,
     }
   }
 
-  return tensors;
+  Tensors return_tensors;
+  for (const auto& tensor : tensors) {
+    return_tensors.push_back(get_cpti(tensor)->ref->value->value->is_undefined_tensor ? Tensor() : tensor);
+  }
+  return return_tensors;
 }
 
 // TODO: check that mutated value does not have alias.
