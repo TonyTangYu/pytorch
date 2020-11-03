@@ -443,6 +443,8 @@ struct CheckpointPool {
   std::vector<weak_intrusive_ptr<External>> exts;
   std::random_device rd;
   std::mt19937 gen = std::mt19937(rd());
+  // whether to take a square-root sample of the pool during an eviction loop
+  bool sample_tensors = true;
   bool has_memory_budget = false;
   long memory_budget;
   void evict();

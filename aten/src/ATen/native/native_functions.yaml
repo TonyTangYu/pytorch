@@ -48,6 +48,12 @@
 - func: unset_memory_budget() -> ()
   variants: function
 
+- func: enable_sampling() -> ()
+  variants: function
+
+- func: disable_sampling() -> ()
+  variants: function
+
 - func: reset_profile() -> ()
   variants: function
 
