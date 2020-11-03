@@ -159,7 +159,8 @@ void CheckpointPool::evict() {
   time_t pre = std::chrono::system_clock::now();
   STATS.track("CheckpointPool::evict");
   TORCH_CHECK(aps.size() > 0);
-  bool shrinked = false;
+  // shrunk: either something has been evicted or the pools have gotten smaller
+  bool shrunk = false;
   int evict_idx = -1;
   double evict_cost = INFINITY;
   time_t current_time = std::chrono::system_clock::now();
@@ -171,7 +172,7 @@ void CheckpointPool::evict() {
   // sampling a random independent subset of all evictable tensors to find the cheapest tensor to evict.
   for (size_t i = 0; i < aps.size();) {
     auto cannot_evict = [&]() {
-                          shrinked = true;
+                          shrunk = true;
                           remove_from_aps(i);
                         };
     auto ap_strong = aps[i].lock();
@@ -189,11 +190,16 @@ void CheckpointPool::evict() {
           evict_idx = i;
         }
       }
-      i += distrib(gen);
+
+      if (sample_tensors) {
+        i += distrib(gen);
+      } else {
+        i += 1;
+      }
     }
   }
   if (evict_idx == -1) {
-    TORCH_CHECK(shrinked);
+    TORCH_CHECK(shrunk);
   } else {
     auto evict_from_idx = [&](size_t idx) {
                             auto ap_strong = aps[idx].lock();
@@ -288,6 +294,14 @@ void unset_memory_budget() {
 void set_memory_budget(long budget) {
   pool.memory_budget = budget;
   pool.has_memory_budget = true;
+}
+
+void enable_sampling() {
+  pool.sample_tensors = true;
+}
+
+void disable_sampling() {
+  pool.sample_tensors = false;
 }
 
 void reset_profile() {
