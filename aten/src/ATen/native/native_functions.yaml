@@ -48,6 +48,12 @@
 - func: unset_memory_budget() -> ()
   variants: function
 
+- func: toggle_sampling(bool sample) -> ()
+  variants: function
+
+- func: toggle_ignore_small_tensors(bool ignore) -> ()
+  variants: function
+
 - func: reset_profile() -> ()
   variants: function
 

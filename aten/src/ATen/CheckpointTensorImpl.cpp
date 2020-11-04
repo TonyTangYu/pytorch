@@ -135,7 +135,7 @@ long cost_time_ = 0;
 
 CheckpointPool pool;
 void CheckpointPool::add(const intrusive_ptr<AliasPool>& p) {
-  if (p->memory > 0 && (memory_count == 0 || p->memory >= 0.01 * double(memory_sum/memory_count))) {
+  if (p->memory > 0 && (memory_count == 0 || !ignore_small_tensors || p->memory >= 0.01 * double(memory_sum/memory_count))) {
     aps.push_back(weak_intrusive_ptr<AliasPool>(p));
   }
 }
@@ -159,7 +159,8 @@ void CheckpointPool::evict() {
   time_t pre = std::chrono::system_clock::now();
   STATS.track("CheckpointPool::evict");
   TORCH_CHECK(aps.size() > 0);
-  bool shrinked = false;
+  // shrunk: either something has been evicted or the pools have gotten smaller
+  bool shrunk = false;
   int evict_idx = -1;
   double evict_cost = INFINITY;
   time_t current_time = std::chrono::system_clock::now();
@@ -171,7 +172,7 @@ void CheckpointPool::evict() {
   // sampling a random independent subset of all evictable tensors to find the cheapest tensor to evict.
   for (size_t i = 0; i < aps.size();) {
     auto cannot_evict = [&]() {
-                          shrinked = true;
+                          shrunk = true;
                           remove_from_aps(i);
                         };
     auto ap_strong = aps[i].lock();
@@ -189,11 +190,16 @@ void CheckpointPool::evict() {
           evict_idx = i;
         }
       }
-      i += distrib(gen);
+
+      if (sample_tensors) {
+        i += distrib(gen);
+      } else {
+        i += 1;
+      }
     }
   }
   if (evict_idx == -1) {
-    TORCH_CHECK(shrinked);
+    TORCH_CHECK(shrunk);
   } else {
     auto evict_from_idx = [&](size_t idx) {
                             auto ap_strong = aps[idx].lock();
@@ -288,6 +294,14 @@ void unset_memory_budget() {
 void set_memory_budget(long budget) {
   pool.memory_budget = budget;
   pool.has_memory_budget = true;
+}
+
+void toggle_sampling(bool sample) {
+  pool.sample_tensors = sample;
+}
+
+void toggle_ignore_small_tensors(bool ignore) {
+  pool.ignore_small_tensors = ignore;
 }
 
 void reset_profile() {
