@@ -445,6 +445,8 @@ struct CheckpointPool {
   std::mt19937 gen = std::mt19937(rd());
   // whether to take a square-root sample of the pool during an eviction loop
   bool sample_tensors = true;
+  // ignore tensors < 1% of the average tensor size
+  bool ignore_small_tensors = true;
   bool has_memory_budget = false;
   long memory_budget;
   void evict();

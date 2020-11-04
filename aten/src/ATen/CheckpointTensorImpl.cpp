@@ -135,7 +135,7 @@ long cost_time_ = 0;
 
 CheckpointPool pool;
 void CheckpointPool::add(const intrusive_ptr<AliasPool>& p) {
-  if (p->memory > 0 && (memory_count == 0 || p->memory >= 0.01 * double(memory_sum/memory_count))) {
+  if (p->memory > 0 && (memory_count == 0 || !ignore_small_tensors || p->memory >= 0.01 * double(memory_sum/memory_count))) {
     aps.push_back(weak_intrusive_ptr<AliasPool>(p));
   }
 }
@@ -296,12 +296,12 @@ void set_memory_budget(long budget) {
   pool.has_memory_budget = true;
 }
 
-void enable_sampling() {
-  pool.sample_tensors = true;
+void toggle_sampling(bool sample) {
+  pool.sample_tensors = sample;
 }
 
-void disable_sampling() {
-  pool.sample_tensors = false;
+void toggle_ignore_small_tensors(bool ignore) {
+  pool.ignore_small_tensors = ignore;
 }
 
 void reset_profile() {
