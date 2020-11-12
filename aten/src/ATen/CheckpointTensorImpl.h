@@ -331,6 +331,11 @@ struct CheckpointTensorCell : intrusive_ptr_target {
     pool->last_used_time = std::chrono::system_clock::now();
     return *t;
   }
+  Tensor steal() {
+    Tensor ret = get();
+    evict();
+    return ret;
+  }
   void pin() {
     get();
     pool->head_remat.reset();

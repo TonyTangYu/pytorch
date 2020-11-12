@@ -132,6 +132,7 @@ long base_compute_time_ = 0;
 long remat_compute_time_ = 0;
 long search_time_ = 0;
 long cost_time_ = 0;
+bool content_stealing_ = true;
 
 CheckpointPool pool;
 void CheckpointPool::add(const intrusive_ptr<AliasPool>& p) {
@@ -296,12 +297,44 @@ void set_memory_budget(long budget) {
   pool.has_memory_budget = true;
 }
 
+// sample a square root of the total tensors when evicting, reducing the search time.
 void toggle_sampling(bool sample) {
   pool.sample_tensors = sample;
 }
 
+// ignore tensors size < 1% of average tensor size when evicting, reducing the search time.
 void toggle_ignore_small_tensors(bool ignore) {
   pool.ignore_small_tensors = ignore;
+}
+
+// When a mutation operator is encountered, instead of cloning the mutated tensors,
+// evict the cell holding mutation operator, then directly modify the mutated tensors.
+// this use less cloning, so the whole system will use less memory and compute,
+// on the expense that some tensors will be evicted based purely on usage pattern.
+// (so the eviction may be suboptimal).
+// In particular, a disaster case will be:
+//   Tensor a = f()
+//   Tensor b = g(a)
+//   Modify a;
+// If f() and g() form long evicted chain, with a in-memory (being the checkpoint),
+// content-stealing will join the two chain, which may heavily impact performance.
+// note that only with content stealing on,
+// running dtr without budget limit will invoke the same kernel/clone as normal pytorch program.
+// rematerializer do not content-steal: if a mutation operator is evict and rematerialized,
+// COW will occur regardless of the status of the flag.
+// The design choice is made to simplify cost evaluation code:
+// On content-stealing rematerialization, the parent will be evicted without regard of it's neighbor,
+// thus possibly creating long eviction chain.
+// So, the eviction cost of a mutation operator should consider its grandparent in addition to its parent,
+// Which sound too complex, so the path of least resistance is chosen.
+// Note that COW on rematerializer has its own downside as well:
+// Beside having less content stealing possibility,
+// We have no idea of the runtime of the COW function on construction,
+// so the eviction cost will be off.
+// To combat this, runtime will be updated on rematerialization to the last function invocation,
+// So only the zeroth eviction will be off.
+void toggle_content_stealing(bool steal) {
+  content_stealing_ = steal;
 }
 
 void reset_profile() {
@@ -426,6 +459,10 @@ void Rematerializer::remat() {
       output_cell->fill(ret[i]);
     }
   }
+  compute_cost = post - pre;
+  // Note that the above line must come after the fill:
+  // fill will subtract the old compute time to undo the addition effect.
+  // If we move this before fill, the result after subtraction will be off.
   ecn.reset();
   for (const strong& s : inputs) {
     s->pool->unlock();
@@ -549,31 +586,20 @@ void add_neighbor(const strong& l, const strong& r) {
   r->pool->neighbors.push_back(weak(l));
 }
 
-// remat take a single vector of tensors,
-// while there are two vector, one storing nonconstants and one storing constants.
-// the constants are small and they will not be considered for eviction.
-// however, we have to stitch the two vectors together to pass it in remat.
-// the size_t in constants decide the location to stitch them in, while input_values fill in the rest.
 MakeRawResult make_raw(const rematerialize_function_t& remat_f,
-                       const strongs& inputs) {
+                       const strongs& inputs,
+                       Tensors raw_outputs,
+                       duration_t time_taken,
+                       const std::vector<int>& aliases) {
   STATS.track("make_raw");
-  for (const strong& s : inputs) {
-    s->pool->lock();
-  }
-  Tensors raw_inputs = uncheckpoint(inputs);
-  time_t pre = std::chrono::system_clock::now();
-  auto raw_outputs = remat_f(raw_inputs);
-  time_t post = std::chrono::system_clock::now();
-  pool.auto_evict();
-  base_compute_time_ += (post - pre).count();
+  base_compute_time_ += time_taken.count();
+  auto remat = intrusive_ptr<Rematerializer>::make(Unsafe(), remat_f, inputs, time_taken);
   std::vector<intrusive_ptr<External>> outputs;
-  std::vector<int> aliases;
   weaks weak_outputs;
-  auto remat = intrusive_ptr<Rematerializer>::make(Unsafe(), remat_f, inputs, post - pre);
-
-  for (const Tensor& t : raw_outputs) {
+  for (size_t i; i < raw_outputs.size(); ++i) {
+    const Tensor& t = raw_outputs[i];
+    int alias = aliases[i];
     intrusive_ptr<AliasPool> alias_pool;
-    int alias = get_alias(raw_inputs, t);
     if (alias == -1) {
       auto m = memory(t);
       alias_pool = intrusive_ptr<AliasPool>::make(Unsafe(), remat, m);
@@ -582,28 +608,45 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
     else {
       alias_pool = inputs[alias]->pool;
       if (alias_pool->head_remat) {
-        alias_pool->head_remat->compute_cost += (post - pre);
+        alias_pool->head_remat->compute_cost += time_taken;
       }
     }
     auto e = intrusive_ptr<External>::make(t, alias_pool, remat);
     pool.exts.push_back(weak_intrusive_ptr<External>(e));
     alias_pool->tensors.push_back(weak(e->value));
     outputs.push_back(e);
-    aliases.push_back(alias);
     weak_outputs.push_back(weak(outputs.back()->value));
   }
   remat->outputs = weak_outputs;
+  return {outputs, aliases, time_taken, remat};
+}
+
+MakeRawResult make_raw(const rematerialize_function_t& remat_f,
+                       const strongs& inputs) {
+  for (const strong& s : inputs) {
+    s->pool->lock();
+  }
+  Tensors raw_inputs = uncheckpoint(inputs);
+  time_t pre = std::chrono::system_clock::now();
+  auto raw_outputs = remat_f(raw_inputs);
+  time_t post = std::chrono::system_clock::now();
+  pool.auto_evict();
+  std::vector<int> aliases;
+  for (const Tensor& t : raw_outputs) {
+    aliases.push_back(get_alias(raw_inputs, t));
+  }
+  auto ret = make_raw(remat_f, inputs, raw_outputs, post - pre, aliases);
   for (size_t i = 0; i < inputs.size(); ++i) {
-    for (size_t j = 0; j < outputs.size(); ++j) {
+    for (size_t j = 0; j < ret.outputs.size(); ++j) {
       if (!is_alias(raw_inputs[i], raw_outputs[j])) {
-        add_neighbor(inputs[i], outputs[j]->value);
+        add_neighbor(inputs[i], ret.outputs[j]->value);
       }
     }
   }
   for (const strong& s : inputs) {
     s->pool->unlock();
   }
-  return {outputs, aliases, post - pre, remat};
+  return ret;
 }
 
 std::string from_time(duration_t t) {
@@ -686,7 +729,29 @@ void CheckpointTensorImpl::mutate(const std::string& name,
       args.push_back(cpti->counter_name());
     }
   }
-  auto ret = make_raw(remat, input_values);
+  MakeRawResult ret;
+  if (content_stealing_) {
+    for (const strong& s : input_values) {
+      s->pool->lock();
+    }
+    std::vector<bool> steal_or_copy;
+    Tensors raw_inputs;
+    std::vector<int> aliases;
+    for (size_t i = 0; i < input_values.size(); ++i) {
+      const strong& s = input_values[i];
+      raw_inputs.push_back(steal_or_copy[i] ? s->steal() : uncheckpoint(s));
+      aliases.push_back(-1); // mutation has no aliases
+    }
+    time_t pre = std::chrono::system_clock::now();
+    mutate(raw_inputs);
+    time_t post = std::chrono::system_clock::now();
+    ret = make_raw(remat, input_values, raw_inputs, post - pre, aliases);
+    for (const strong& s : input_values) {
+      s->pool->unlock();
+    }
+  } else {
+    ret = make_raw(remat, input_values);
+  }
   const auto& modified = ret.outputs;
   for (size_t idx: mutate_idx) {
     cell_from_tensor(inputs[idx])->value = modified[idx];
