@@ -738,6 +738,12 @@ void CheckpointTensorImpl::mutate(const std::string& name,
     Tensors raw_inputs;
     std::vector<int> aliases;
     for (size_t i = 0; i < input_values.size(); ++i) {
+      steal_or_copy.push_back(false);
+    }
+    for (size_t i : mutate_idx) {
+      steal_or_copy[i] = true;
+    }
+    for (size_t i = 0; i < input_values.size(); ++i) {
       const strong& s = input_values[i];
       raw_inputs.push_back(steal_or_copy[i] ? s->steal() : uncheckpoint(s));
       aliases.push_back(-1); // mutation has no aliases
