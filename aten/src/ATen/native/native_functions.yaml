@@ -1,10 +1,5 @@
 # See README.md in this directory for more guidance
 
-# *********NB: _cast_* operators are DEPRECATED and will be removed
-# eventually. These were previously used before TorchScript IR supported
-# representing ScalarType's. They are now superseded by usage of
-# `aten::to()`. The ops remain here for backward compatibility purposes.
-
 - func: checkpoint(Tensor self) -> Tensor
   variants: method
 
@@ -30,10 +25,10 @@
 - func: pin(Tensor(a!) self) -> ()
   variants: method
 
-# Temporary type cast operators. These are needed to trace type-casts now since
-# Type's are not supported in the IR. Instead, we call down to these
-# specialized operators for each datatype.
-# TODO: remove when we have Type support in the IR
+# *********NB: _cast_* operators are DEPRECATED and will be removed
+# eventually. These were previously used before TorchScript IR supported
+# representing ScalarType's. They are now superseded by usage of
+# `aten::to()`. The ops remain here for backward compatibility purposes.
 
 # DEPRECATED. DO NOT USE
 - func: _cast_Byte(Tensor self, bool non_blocking=False) -> Tensor
@@ -7636,6 +7631,7 @@
   dispatch:
     CPU: _cat_out_cpu
     CUDA: cat_out_cuda
+    QuantizedCPU: cat_out_quantized_cpu
     Checkpoint: checkpoint__cat_out
 
 - func: _foreach_add.Scalar(Tensor[] tensors, Scalar scalar) -> Tensor[]

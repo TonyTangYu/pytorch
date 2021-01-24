@@ -6,6 +6,7 @@
 #include <string>
 #include <random>
 #include <cmath>
+#include <pybind11/pybind11.h>
 
 namespace at {
 
@@ -707,62 +708,24 @@ CheckpointTensorImpl::CheckpointTensorImpl(const Tensor& t) : CheckpointTensorIm
   pool.exts.push_back(weak_intrusive_ptr<External>(ref->value));
 }
 
+PYBIND11_MODULE(torch, m) {
+#define PY_FFI(name) m.def(#name, &name)
+  PY_FFI(new_log);
+  PY_FFI(annotate_log);
+  PY_FFI(toggle_log);
+  PY_FFI(clear_checkpointpool);
+  PY_FFI(set_memory_budget);
+  PY_FFI(unset_memory_budget);
+  PY_FFI(toggle_sampling);
+  PY_FFI(toggle_ignore_small_tensors);
+  PY_FFI(toggle_profile);
+  PY_FFI(reset_profile);
+  PY_FFI(base_compute_time);
+  PY_FFI(remat_compute_time);
+  PY_FFI(compute_time);
+  PY_FFI(search_time);
+  PY_FFI(cost_time);
+  PY_FFI(loop_time);
 }
 
-/*todo: use pybind11
- *
-- func: new_log(str logname) -> ()
-  variants: function
-
-- func: annotate_log(str logname) -> ()
-  variants: function
-
-- func: toggle_log(bool use_log) -> ()
-  variants: function
-
-- func: clear_checkpointpool() -> ()
-  variants: function
-
-- func: set_memory_budget(int budget) -> ()
-  variants: function
-
-- func: unset_memory_budget() -> ()
-  variants: function
-
-- func: toggle_sampling(bool sample) -> ()
-  variants: function
-
-- func: toggle_ignore_small_tensors(bool ignore) -> ()
-  variants: function
-
-- func: reset_profile() -> ()
-  variants: function
-
-# the compute time of kernel, ignoring remat
-- func: base_compute_time() -> int
-  variants: function
-
-# the compute time of remat kernel
-- func: remat_compute_time() -> int
-  variants: function
-
-# base_compute_time() + remat_compute_time()
-- func: compute_time() -> int
-  variants: function
-
-# total time spent in searching.
-- func: search_time() -> int
-  variants: function
-
-# total time spent in evaluating cost
-- func: cost_time() -> int
-  variants: function
-
-# time spent looping over tensors. search_time() - cost_time()
-- func: loop_time() -> int
-  variants: function
-
-- func: toggle_profile(bool profile) -> ()
-  variants: function
-
- */
+}

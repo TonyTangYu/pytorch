@@ -1651,4 +1651,41 @@ Tensor& checkpoint_mv_out(at::Tensor& out, const Tensor& self, const Tensor& vec
   return {out};
 }
 
+template<typename T> c10::optional<std::vector<T>> oar2ov (const c10::optional<c10::ArrayRef<T>>& oar) {
+  if (oar) {
+    return oar.value().vec();
+  } else {
+    return c10::optional<std::vector<T>>();
+  }
+}
+
+template<typename T> c10::optional<c10::ArrayRef<T>> ov2oar (const c10::optional<std::vector<T>>& ov) {
+  if (ov) {
+    return c10::optional<c10::ArrayRef<T>>(ov.value());
+  } else {
+    return c10::optional<c10::ArrayRef<T>>();
+  }
+}
+
+Tensor checkpoint_upsample_bilinear2d_backward(const Tensor& a, c10::optional<c10::ArrayRef<long>> b, c10::ArrayRef<long> c, bool d, c10::optional<c10::ArrayRef<double>> e) {
+  auto b_ = oar2ov(b);
+  auto c_ = c.vec();
+  auto e_ = oar2ov(e);
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::upsample_bilinear2d_backward(vec.at(0), ov2oar(b_), c_, d, ov2oar(e_))};
+    };
+  return CheckpointTensorImpl::make("upsample_bilinear2d_backward", rt, {a})[0];
+}
+
+Tensor checkpoint_upsample_bilinear2d(const Tensor& a, c10::optional<c10::ArrayRef<long>> b, bool c, c10::optional<c10::ArrayRef<double>> d) {
+  auto b_ = oar2ov(b);
+  auto d_ = oar2ov(d);
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::upsample_bilinear2d(vec.at(0), ov2oar(b_), c, ov2oar(d_))};
+    };
+  return CheckpointTensorImpl::make("upsample_bilinear2d", rt, {a})[0];
+}
+
 }}
