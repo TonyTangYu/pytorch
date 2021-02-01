@@ -17,6 +17,7 @@
 #include <ATen/Parallel.h>
 #include <ATen/Utils.h>
 #include <ATen/VmapMode.h>
+#include <ATen/CheckpointTensorImpl.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -102,6 +103,40 @@ static PyObject * THPModule_initNames(PyObject *self, PyObject *arg)
   }
   Py_RETURN_NONE;
 }
+
+CheckpointFunctions* cpf = nullptr;
+
+CheckpointFunctions* GetCheckpointFunctions() {
+  assert(cpf != nullptr);
+  return cpf;
+}
+
+void SetCheckpointFunctions(CheckpointFunctions* p) {
+  cpf = p;
+}
+
+void InitCheckpointFunctions(PyObject* module) {
+  auto py_module = py::reinterpret_borrow<py::module>(module);
+#define PY_FFI(name) py_module.def(#name, CheckpointFunctions::static_ ## name)
+  PY_FFI(new_log);
+  PY_FFI(annotate_log);
+  PY_FFI(toggle_log);
+  PY_FFI(clear_checkpointpool);
+  PY_FFI(unset_memory_budget);
+  PY_FFI(set_memory_budget);
+  PY_FFI(toggle_sampling);
+  PY_FFI(toggle_ignore_small_tensors);
+  PY_FFI(reset_profile);
+  PY_FFI(toggle_profile);
+  PY_FFI(base_compute_time);
+  PY_FFI(remat_compute_time);
+  PY_FFI(compute_time);
+  PY_FFI(cost_time);
+  PY_FFI(search_time);
+  PY_FFI(loop_time);
+
+}
+
 //
 // Callback for python part. Used for additional initialization of python classes
 static PyObject * THPModule_initExtension(PyObject *_unused, PyObject *shm_manager_path)
@@ -139,6 +174,7 @@ static PyObject * THPModule_initExtension(PyObject *_unused, PyObject *shm_manag
   THPComplexDoubleStorage_postInit(module);
   THPComplexFloatStorage_postInit(module);
   THPAutograd_initFunctions();
+  InitCheckpointFunctions(module);
   Py_RETURN_NONE;
   END_HANDLE_TH_ERRORS
 }
@@ -808,7 +844,6 @@ PyObject* initModule() {
   // force ATen to initialize because it handles
   // setting up TH Errors so that they throw C++ exceptions
   at::init();
-
   // Automatically translate errors thrown from pybind11 functions
   py::register_exception_translator([](std::exception_ptr e) { // NOLINT
     try {
@@ -818,7 +853,6 @@ PyObject* initModule() {
     }
     CATCH_TH_ERRORS()
   });
-
   auto py_module = py::reinterpret_borrow<py::module>(module);
   py_module.def("_demangle", &c10::demangle);
   py_module.def("_log_api_usage_once", &LogAPIUsageOnceFromPython);

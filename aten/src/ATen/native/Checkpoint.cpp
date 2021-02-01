@@ -36,6 +36,16 @@ Tensor& checkpoint_add_(Tensor& a, const Tensor& b, Scalar c) {
   return a;
 }
 
+Tensor& checkpoint_add_out(Tensor& a, const Tensor& b, const Tensor& c, c10::Scalar d) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      Tensor a = vec.at(0);
+      at::add_out(a, vec.at(1), vec.at(2), d);
+    };
+  CheckpointTensorImpl::mutate("add_out", mt, {a, b, c}, {0});
+  return a;
+}
+
 Tensor checkpoint_mul(at::Tensor const& a, at::Tensor const& b) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {

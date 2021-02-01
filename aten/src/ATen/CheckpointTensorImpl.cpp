@@ -1,12 +1,11 @@
 #include <ATen/CheckpointTensorImpl.h>
 #include <ATen/Logger.h>
 #include <c10/cuda/CUDACachingAllocator.h>
-
+#include <torch/csrc/Module.h>
 #include <chrono>
 #include <string>
 #include <random>
 #include <cmath>
-#include <pybind11/pybind11.h>
 
 namespace at {
 
@@ -216,86 +215,80 @@ void CheckpointPool::evict() {
 
 CheckpointPool::CheckpointPool() { }
 
-void new_log(std::string str) {
-  DTRLogger::logger().out = std::ofstream(DTRLogger::logger().get_filename(str));
-}
-
-void annotate_log(std::string str) {
-  if (!use_log_) { return; }
-  if (log_json) {
-    json j;
-    j[INSTRUCTION] = "ANNOTATE";
-    j[ANNOTATION] = str;
-    DTRLogger::logger().log(j.dump());
-  } else {
-    DTRLogger::logger().log("# " + str);
+struct CheckpointFunctionsImpl: CheckpointFunctions {
+  void new_log(std::string str) override {
+    DTRLogger::logger().out = std::ofstream(DTRLogger::logger().get_filename(str));
   }
-}
-
-void toggle_log(bool b) {
-  use_log_ = b;
-}
-
-void clear_checkpointpool() {
-  while (likely(!pool.exts.empty())) {
-    if (auto e = pool.exts.back().lock()) {
-      e->value->pin();
+  void annotate_log(std::string str) override {
+    if (!use_log_) { return; }
+    if (log_json) {
+      json j;
+      j[INSTRUCTION] = "ANNOTATE";
+      j[ANNOTATION] = str;
+      DTRLogger::logger().log(j.dump());
+    } else {
+      DTRLogger::logger().log("# " + str);
     }
-    pool.exts.pop_back();
   }
-}
+  void toggle_log(bool b) override {
+    use_log_ = b;
+  }
+  void clear_checkpointpool() override {
+    while (likely(!pool.exts.empty())) {
+      if (auto e = pool.exts.back().lock()) {
+        e->value->pin();
+      }
+      pool.exts.pop_back();
+    }
+  }
+  void unset_memory_budget() override {
+    pool.has_memory_budget = false;
+  }
+  void set_memory_budget(long budget) override {
+    pool.memory_budget = budget;
+    pool.has_memory_budget = true;
+  }
+  void toggle_sampling(bool sample) override {
+    pool.sample_tensors = sample;
+  }
+  void toggle_ignore_small_tensors(bool ignore) override {
+    pool.ignore_small_tensors = ignore;
+  }
+  void reset_profile() override {
+    base_compute_time_ = 0;
+    remat_compute_time_ = 0;
+    search_time_ = 0;
+    cost_time_ = 0;
+  }
+  void toggle_profile(bool profile) override {
+    use_profile_ = profile;
+  }
+  long base_compute_time() override {
+    return base_compute_time_;
+  }
+  long remat_compute_time() override {
+    return remat_compute_time_;
+  }
+  long compute_time() override {
+    return base_compute_time() + remat_compute_time();
+  }
+  long cost_time() override {
+    return cost_time_;
+  }
+  long search_time() override {
+    return search_time_;
+  }
+  long loop_time() override {
+    return search_time() - cost_time();
+  }
+};
 
-void unset_memory_budget() {
-  pool.has_memory_budget = false;
-}
-
-void set_memory_budget(long budget) {
-  pool.memory_budget = budget;
-  pool.has_memory_budget = true;
-}
-
-void toggle_sampling(bool sample) {
-  pool.sample_tensors = sample;
-}
-
-void toggle_ignore_small_tensors(bool ignore) {
-  pool.ignore_small_tensors = ignore;
-}
-
-void reset_profile() {
-  base_compute_time_ = 0;
-  remat_compute_time_ = 0;
-  search_time_ = 0;
-  cost_time_ = 0;
-}
-
-void toggle_profile(bool profile) {
-  use_profile_ = profile;
-}
-
-long base_compute_time() {
-  return base_compute_time_;
-}
-
-long remat_compute_time() {
-  return remat_compute_time_;
-}
-
-long compute_time() {
-  return base_compute_time() + remat_compute_time();
-}
-
-long cost_time() {
-  return cost_time_;
-}
-
-long search_time() {
-  return search_time_;
-}
-
-long loop_time() {
-  return search_time() - cost_time();
-}
+struct CheckpointFunctionsRegister {
+  CheckpointFunctionsRegister() {
+    SetCheckpointFunctions(new CheckpointFunctionsImpl());
+  }
+};
+CheckpointFunctionsRegister cpfr;
 
 namespace native {
 
@@ -706,26 +699,6 @@ void CheckpointTensorImpl::release_resources() {
 
 CheckpointTensorImpl::CheckpointTensorImpl(const Tensor& t) : CheckpointTensorImpl(intrusive_ptr<External>::make(t)) {
   pool.exts.push_back(weak_intrusive_ptr<External>(ref->value));
-}
-
-PYBIND11_MODULE(torch, m) {
-#define PY_FFI(name) m.def(#name, &name)
-  PY_FFI(new_log);
-  PY_FFI(annotate_log);
-  PY_FFI(toggle_log);
-  PY_FFI(clear_checkpointpool);
-  PY_FFI(set_memory_budget);
-  PY_FFI(unset_memory_budget);
-  PY_FFI(toggle_sampling);
-  PY_FFI(toggle_ignore_small_tensors);
-  PY_FFI(toggle_profile);
-  PY_FFI(reset_profile);
-  PY_FFI(base_compute_time);
-  PY_FFI(remat_compute_time);
-  PY_FFI(compute_time);
-  PY_FFI(search_time);
-  PY_FFI(cost_time);
-  PY_FFI(loop_time);
 }
 
 }
