@@ -1,7 +1,6 @@
 #include <ATen/CheckpointTensorImpl.h>
 #include <ATen/Logger.h>
 #include <c10/cuda/CUDACachingAllocator.h>
-#include <torch/csrc/Module.h>
 #include <chrono>
 #include <string>
 #include <random>
@@ -283,12 +282,10 @@ struct CheckpointFunctionsImpl: CheckpointFunctions {
   }
 };
 
-struct CheckpointFunctionsRegister {
-  CheckpointFunctionsRegister() {
-    SetCheckpointFunctions(new CheckpointFunctionsImpl());
-  }
-};
-CheckpointFunctionsRegister cpfr;
+CheckpointFunctions* GetCheckpointFunctions() {
+  static CheckpointFunctionsImpl cpfi;
+  return &cpfi;
+}
 
 namespace native {
 

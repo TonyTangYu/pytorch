@@ -18,9 +18,9 @@
 #include <ATen/Utils.h>
 #include <ATen/VmapMode.h>
 #include <ATen/CheckpointTensorImpl.h>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-
 #include <torch/csrc/THP.h>
 #include <torch/csrc/DynamicTypes.h>
 #include <torch/csrc/Device.h>
@@ -78,7 +78,6 @@ THPGenerator *THPDefaultCPUGenerator = nullptr;
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-
 static PyObject * THPModule_initNames(PyObject *self, PyObject *arg)
 {
   static std::vector<std::string> names;
@@ -104,20 +103,9 @@ static PyObject * THPModule_initNames(PyObject *self, PyObject *arg)
   Py_RETURN_NONE;
 }
 
-CheckpointFunctions* cpf = nullptr;
-
-CheckpointFunctions* GetCheckpointFunctions() {
-  assert(cpf != nullptr);
-  return cpf;
-}
-
-void SetCheckpointFunctions(CheckpointFunctions* p) {
-  cpf = p;
-}
-
 void InitCheckpointFunctions(PyObject* module) {
   auto py_module = py::reinterpret_borrow<py::module>(module);
-#define PY_FFI(name) py_module.def(#name, CheckpointFunctions::static_ ## name)
+#define PY_FFI(name) py_module.def(#name, at::CheckpointFunctions::static_ ## name)
   PY_FFI(new_log);
   PY_FFI(annotate_log);
   PY_FFI(toggle_log);
@@ -134,7 +122,6 @@ void InitCheckpointFunctions(PyObject* module) {
   PY_FFI(cost_time);
   PY_FFI(search_time);
   PY_FFI(loop_time);
-
 }
 
 //
