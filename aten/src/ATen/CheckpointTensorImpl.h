@@ -24,7 +24,7 @@
 
 #define likely(x)      __builtin_expect(!!(x), 1)
 #define unlikely(x)    __builtin_expect(!!(x), 0)
-#define TORCH_CHECK(a, ...) // profile mode
+//#define TORCH_CHECK(a, ...) // profile mode
 
 // System Description:
 // Every Tensor is managed by a CheckpointTensor,
@@ -327,7 +327,7 @@ struct CheckpointTensorCell : intrusive_ptr_target {
       remat->remat();
     }
     TORCH_CHECK(t);
-    TORCH_CHECK(! t->key_set().has(DispatchKey::CheckpointTensorId));
+    TORCH_CHECK(! t->key_set().has(DispatchKey::Checkpoint));
     pool->last_used_time = std::chrono::system_clock::now();
     return *t;
   }
@@ -411,7 +411,10 @@ struct CheckpointTensorImpl : TensorImpl {
                      const mutate_function_t& mutate,
                      const Tensors& inputs,
                      const std::vector<size_t>& mutate_idx);
+  intrusive_ptr<TensorImpl> shallow_copy_and_detach() const;
   intrusive_ptr<TensorImpl> shallow_copy_and_detach(const VariableVersion& version_counter,
+                                                    bool allow_tensor_metadata_change) const override;
+  intrusive_ptr<TensorImpl> shallow_copy_and_detach(VariableVersion&& version_counter,
                                                     bool allow_tensor_metadata_change) const override;
   void shallow_copy_from(const c10::intrusive_ptr<TensorImpl>& impl) override;
   int64_t dim() const override {
@@ -456,11 +459,7 @@ struct CheckpointPool {
   CheckpointPool();
 };
 
-inline CheckpointTensorImpl* get_cpti(const Tensor& t) {
-  auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
-  TORCH_CHECK(cpti != nullptr);
-  return cpti;
-}
+CheckpointTensorImpl* get_cpti(const Tensor& t);
 
 inline Ref<intrusive_ptr<External>> cell_from_tensor(const Tensor& t) {
   return get_cpti(t)->ref;

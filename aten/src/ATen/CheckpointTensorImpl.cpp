@@ -106,7 +106,7 @@ void reset_memory_stat() {
   memory_count = 0;
 }
 
-inline size_t memory(const Tensor& t) {
+size_t memory(const Tensor& t) {
   if (! t.has_storage()) {
     return 0;
   }
@@ -332,7 +332,6 @@ Tensor try_checkpoint(const Tensor& t) {
 
 }
 
-[[inline]]
 Tensor uncheckpoint(const strong& input) {
   return input->get();
 }
@@ -487,8 +486,7 @@ void CheckpointTensorCell::fill(const Tensor& t) {
   }
 }
 
-intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const VariableVersion& version_counter,
-                                                                        bool allow_tensor_metadata_change) const {
+intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach() const {
   auto ret = intrusive_ptr<CheckpointTensorImpl>::make(ref);
   if (use_log_) {
     DTRLogCopy(ret->counter_name(), counter_name());
@@ -496,9 +494,19 @@ intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const Va
   return ret;
 }
 
+intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const VariableVersion& version_counter,
+                                                                        bool allow_tensor_metadata_change) const {
+  return shallow_copy_and_detach();
+}
+
+intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(VariableVersion&& version_counter,
+                                                                        bool allow_tensor_metadata_change) const {
+  return shallow_copy_and_detach();
+}
+
 void CheckpointTensorImpl::shallow_copy_from(const c10::intrusive_ptr<TensorImpl>& impl) {
   STATS.track("CheckpointTensorCell::shallow_copy_from");
-  TORCH_CHECK(impl->key_set().has(DispatchKey::CheckpointTensorId));
+  TORCH_CHECK(impl->key_set().has(DispatchKey::Checkpoint));
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(impl.get());
   TORCH_CHECK(cpti != nullptr);
   ref->value = cpti->ref->value;
@@ -599,6 +607,12 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
 
 std::string from_time(duration_t t) {
   return std::to_string(std::chrono::nanoseconds(t).count());
+}
+
+CheckpointTensorImpl* get_cpti(const Tensor& t) {
+  auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
+  CHECK(cpti != nullptr);
+  return cpti;
 }
 
 Tensors CheckpointTensorImpl::make(const std::string& name,
