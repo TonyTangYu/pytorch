@@ -471,6 +471,7 @@
   variants: method
   dispatch:
     DefaultBackend: add_
+    Checkpoint: checkpoint_add_
 
 - func: addmv(Tensor self, Tensor mat, Tensor vec, *, Scalar beta=1, Scalar alpha=1) -> Tensor
   use_c10_dispatcher: full
@@ -1076,11 +1077,13 @@
   use_c10_dispatcher: full
   dispatch:
     DefaultBackend: cat
+    Checkpoint: checkpoint_cat
 
 - func: cat.out(Tensor[] tensors, int dim=0, *, Tensor(a!) out) -> Tensor(a!)
   use_c10_dispatcher: hacky_wrapper_for_legacy_signatures
   dispatch:
     DefaultBackend: cat_out
+    Checkpoint: checkpoint_cat_out
 
 - func: cat.names(Tensor[] tensors, Dimname dim) -> Tensor
   use_c10_dispatcher: full
@@ -1646,12 +1649,14 @@
   variants: function, method
   dispatch:
     DefaultBackend: div
+    Checkpoint: checkpoint_div
 
 - func: div_.Scalar(Tensor(a!) self, Scalar other) -> Tensor(a!)
   use_c10_dispatcher: full
   variants: method
   dispatch:
     DefaultBackend: div_
+    Checkpoint: checkpoint_div_
 
 # divide, alias for div
 - func: divide.Tensor(Tensor self, Tensor other) -> Tensor
@@ -4480,6 +4485,7 @@
   use_c10_dispatcher: full
   dispatch:
     DefaultBackend: _unsafe_view
+    Checkpoint: checkpoint_unsafe_view
 
 - func: unsqueeze(Tensor(a) self, int dim) -> Tensor(a)
   use_c10_dispatcher: full
@@ -4860,12 +4866,14 @@
   variants: function, method
   dispatch:
     DefaultBackend: sub
+    Checkpoint: checkpoint_sub
 
 - func: sub_.Scalar(Tensor(a!) self, Scalar other, Scalar alpha=1) -> Tensor(a!)
   use_c10_dispatcher: full
   variants: method
   dispatch:
     DefaultBackend: sub_
+    Checkpoint: checkpoint_sub_
 
 # subtract, alias for sub
 - func: subtract.out(Tensor self, Tensor other, *, Scalar alpha=1, Tensor(a!) out) -> Tensor(a!)

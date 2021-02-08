@@ -3,14 +3,6 @@
 
 namespace at { namespace native {
 
-Tensor checkpoint_add(const Tensor& a, const Tensor& b, c10::Scalar c) {
-  rematerialize_function_t rt =
-    [=](const Tensors& vec) -> Tensors {
-      return {at::add(vec.at(0), vec.at(1), c)};
-    };
-  return CheckpointTensorImpl::make("add", rt, {a, b})[0];
-}
-
 Tensor checkpoint_t(at::Tensor const& a) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -19,12 +11,12 @@ Tensor checkpoint_t(at::Tensor const& a) {
   return CheckpointTensorImpl::make("t", rt, {a})[0];
 }
 
-Tensor checkpoint_add(at::Tensor const& a, c10::Scalar b, c10::Scalar c) {
+Tensor checkpoint_add(const Tensor& a, const Tensor& b, Scalar c) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
-      return {at::add(vec.at(0), b, c)};
+      return {at::add(vec.at(0), vec.at(1), c)};
     };
-  return CheckpointTensorImpl::make("add", rt, {a})[0];
+  return CheckpointTensorImpl::make("add", rt, {a, b})[0];
 }
 
 Tensor& checkpoint_add_(Tensor& a, const Tensor& b, Scalar c) {
@@ -36,13 +28,30 @@ Tensor& checkpoint_add_(Tensor& a, const Tensor& b, Scalar c) {
   return a;
 }
 
-Tensor& checkpoint_add_out(Tensor& a, const Tensor& b, const Tensor& c, c10::Scalar d) {
+Tensor& checkpoint_add_out(Tensor& a, const Tensor& b, const Tensor& c, Scalar d) {
   mutate_function_t mt =
     [=](const Tensors& vec) {
       Tensor a = vec.at(0);
       at::add_out(a, vec.at(1), vec.at(2), d);
     };
   CheckpointTensorImpl::mutate("add_out", mt, {a, b, c}, {0});
+  return a;
+}
+
+Tensor checkpoint_add(at::Tensor const& a, Scalar b, Scalar c) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::add(vec.at(0), b, c)};
+    };
+  return CheckpointTensorImpl::make("add", rt, {a})[0];
+}
+
+Tensor& checkpoint_add_(Tensor& a, Scalar b, Scalar c) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      vec.at(0).add_(b, c);
+    };
+  CheckpointTensorImpl::mutate("add_", mt, {a}, {0});
   return a;
 }
 
@@ -63,7 +72,7 @@ Tensor& checkpoint_mul_(at::Tensor& a, at::Tensor const& b) {
   return a;
 }
 
-Tensor& checkpoint_mul_(at::Tensor& a, c10::Scalar b) {
+Tensor& checkpoint_mul_(at::Tensor& a, Scalar b) {
   mutate_function_t mt =
     [=](const Tensors& vec) {
       vec.at(0).mul_(b);
@@ -72,7 +81,7 @@ Tensor& checkpoint_mul_(at::Tensor& a, c10::Scalar b) {
   return a;
 }
 
-Tensor checkpoint_zeros_like(at::Tensor const& a, c10::TensorOptions const& b, c10::optional<c10::MemoryFormat> c) {
+Tensor checkpoint_zeros_like(at::Tensor const& a, TensorOptions const& b, optional<MemoryFormat> c) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::zeros_like(vec.at(0), b, c)};
@@ -80,7 +89,7 @@ Tensor checkpoint_zeros_like(at::Tensor const& a, c10::TensorOptions const& b, c
   return CheckpointTensorImpl::make("zeros_like", rt, {a})[0];
 }
 
-Tensor checkpoint_ones_like(at::Tensor const& a, c10::TensorOptions const& b, c10::optional<c10::MemoryFormat> c) {
+Tensor checkpoint_ones_like(at::Tensor const& a, TensorOptions const& b, optional<MemoryFormat> c) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::ones_like(vec.at(0), b, c)};
@@ -88,7 +97,7 @@ Tensor checkpoint_ones_like(at::Tensor const& a, c10::TensorOptions const& b, c1
   return CheckpointTensorImpl::make("ones_like", rt, {a})[0];
 }
 
-Tensor checkpoint_addcmul(at::Tensor const& a, at::Tensor const& b, at::Tensor const& c, c10::Scalar d) {
+Tensor checkpoint_addcmul(at::Tensor const& a, at::Tensor const& b, at::Tensor const& c, Scalar d) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::addcmul(vec.at(0), vec.at(1), vec.at(2), d)};
@@ -96,7 +105,7 @@ Tensor checkpoint_addcmul(at::Tensor const& a, at::Tensor const& b, at::Tensor c
   return CheckpointTensorImpl::make("addcmul", rt, {a, b, c})[0];
 }
 
-Tensor& checkpoint_addcmul_(at::Tensor& a, at::Tensor const& b, at::Tensor const& c, c10::Scalar d) {
+Tensor& checkpoint_addcmul_(at::Tensor& a, at::Tensor const& b, at::Tensor const& c, Scalar d) {
   mutate_function_t mt =
     [=](const Tensors& vec) {
       vec.at(0).addcmul_(vec.at(1), vec.at(2), d);
@@ -121,7 +130,7 @@ Tensor checkpoint_sqrt(const Tensor& a) {
   return CheckpointTensorImpl::make("sqrt", rt, {a})[0];
 }
 
-Tensor& checkpoint_addcdiv_(at::Tensor& a, at::Tensor const& b, at::Tensor const& c, c10::Scalar d) {
+Tensor& checkpoint_addcdiv_(at::Tensor& a, at::Tensor const& b, at::Tensor const& c, Scalar d) {
   mutate_function_t mt =
     [=](const Tensors& vec) {
       vec.at(0).addcdiv_(vec.at(1), vec.at(2), d);
@@ -130,7 +139,7 @@ Tensor& checkpoint_addcdiv_(at::Tensor& a, at::Tensor const& b, at::Tensor const
   return a;
 }
 
-Tensor checkpoint_addcdiv(at::Tensor const& a, at::Tensor const& b, at::Tensor const& c, c10::Scalar d) {
+Tensor checkpoint_addcdiv(at::Tensor const& a, at::Tensor const& b, at::Tensor const& c, Scalar d) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::addcdiv(vec.at(0), vec.at(1), vec.at(2), d)};
@@ -138,8 +147,8 @@ Tensor checkpoint_addcdiv(at::Tensor const& a, at::Tensor const& b, at::Tensor c
   return CheckpointTensorImpl::make("addcdiv", rt, {a, b, c})[0];
 }
 
-Tensor checkpoint_to(at::Tensor const& a, c10::TensorOptions const& b, bool c, bool d, c10::optional<c10::MemoryFormat> e) {
-  c10::TensorOptions b_ = b;
+Tensor checkpoint_to(at::Tensor const& a, TensorOptions const& b, bool c, bool d, optional<MemoryFormat> e) {
+  TensorOptions b_ = b;
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {vec.at(0).to(b_, c, d, e)};
@@ -164,7 +173,24 @@ Tensor& checkpoint_div_(Tensor& a, const Tensor& b) {
   return a;
 }
 
-Tensor checkpoint_clone(at::Tensor const& a, c10::optional<c10::MemoryFormat> b) {
+Tensor checkpoint_div(const Tensor& a, Scalar b) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::div(vec.at(0), b)};
+    };
+  return CheckpointTensorImpl::make("div", rt, {a})[0];
+}
+
+Tensor& checkpoint_div_(Tensor& a, Scalar b) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      vec.at(0).div_(b);
+    };
+  CheckpointTensorImpl::mutate("div_", mt, {a}, {0});
+  return a;
+}
+
+Tensor checkpoint_clone(at::Tensor const& a, optional<MemoryFormat> b) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
     return {at::clone(vec.at(0), b)};
@@ -180,7 +206,7 @@ Tensor checkpoint_where(at::Tensor const& a, at::Tensor const& b, at::Tensor con
   return CheckpointTensorImpl::make("where", rt, {a, b, c})[0];
 }
 
-Tensor checkpoint_constant_pad_nd(Tensor const& a, c10::ArrayRef<long> b, c10::Scalar c) {
+Tensor checkpoint_constant_pad_nd(Tensor const& a, IntArrayRef b, Scalar c) {
   std::vector<long> b_ = b.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -262,7 +288,7 @@ std::tuple<Tensor, Tensor, Tensor> checkpoint_cudnn_batch_norm_backward(at::Tens
   return {ret[0], ret[1], ret[2]};
 }
 
-Tensor checkpoint_as_strided(const Tensor& a, c10::ArrayRef<long> b, c10::ArrayRef<long> c, c10::optional<long> d) {
+Tensor checkpoint_as_strided(const Tensor& a, IntArrayRef b, IntArrayRef c, optional<long> d) {
   std::vector<long> b_ = b.vec(), c_ = c.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -279,7 +305,7 @@ Tensor checkpoint__masked_scale(const Tensor& a, const Tensor& b, double c) {
   return CheckpointTensorImpl::make("_masked_scale", rt, {a, b})[0];
 }
 
-Tensor checkpoint_cudnn_convolution(const Tensor& a, const Tensor& b, c10::ArrayRef<long> c, c10::ArrayRef<long> d, c10::ArrayRef<long> e, long f, bool g, bool h, bool i) {
+Tensor checkpoint_cudnn_convolution(const Tensor& a, const Tensor& b, IntArrayRef c, IntArrayRef d, IntArrayRef e, long f, bool g, bool h, bool i) {
   std::vector<long> c_ = c.vec(), d_ = d.vec(), e_ = e.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -288,7 +314,7 @@ Tensor checkpoint_cudnn_convolution(const Tensor& a, const Tensor& b, c10::Array
   return CheckpointTensorImpl::make("cudnn_convolution", rt, {a, b})[0];
 }
 
-Tensor checkpoint_cudnn_convolution_transpose(const Tensor& a, const Tensor& b, c10::ArrayRef<long> c, c10::ArrayRef<long> d, c10::ArrayRef<long> e, c10::ArrayRef<long> f, long g, bool h, bool i, bool j) {
+Tensor checkpoint_cudnn_convolution_transpose(const Tensor& a, const Tensor& b, IntArrayRef c, IntArrayRef d, IntArrayRef e, IntArrayRef f, long g, bool h, bool i, bool j) {
   std::vector<long> c_ = c.vec(), d_ = d.vec(), e_ = e.vec(), f_ = f.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -297,7 +323,7 @@ Tensor checkpoint_cudnn_convolution_transpose(const Tensor& a, const Tensor& b, 
   return CheckpointTensorImpl::make("cudnn_convolution_transpose", rt, {a, b})[0];
 }
 
-std::tuple<Tensor, Tensor> checkpoint_cudnn_convolution_backward(const Tensor& a, const Tensor& b, const Tensor& c, c10::ArrayRef<long> d, c10::ArrayRef<long> e, c10::ArrayRef<long> f, long g, bool h, bool i, bool j, std::array<bool, 2ul> k) {
+std::tuple<Tensor, Tensor> checkpoint_cudnn_convolution_backward(const Tensor& a, const Tensor& b, const Tensor& c, IntArrayRef d, IntArrayRef e, IntArrayRef f, long g, bool h, bool i, bool j, std::array<bool, 2ul> k) {
   std::vector<long> d_ = d.vec(), e_ = e.vec(), f_ = f.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -308,7 +334,7 @@ std::tuple<Tensor, Tensor> checkpoint_cudnn_convolution_backward(const Tensor& a
   return {ret[0], ret[1]};
 }
 
-std::tuple<Tensor, Tensor> checkpoint_cudnn_convolution_transpose_backward(const Tensor& a, const Tensor& b, const Tensor& c, c10::ArrayRef<long> d, c10::ArrayRef<long> e, c10::ArrayRef<long> f, c10::ArrayRef<long> g, long h, bool i, bool j, bool k, std::array<bool, 2ul> l) {
+std::tuple<Tensor, Tensor> checkpoint_cudnn_convolution_transpose_backward(const Tensor& a, const Tensor& b, const Tensor& c, IntArrayRef d, IntArrayRef e, IntArrayRef f, IntArrayRef g, long h, bool i, bool j, bool k, std::array<bool, 2ul> l) {
   std::vector<long> d_ = d.vec(), e_ = e.vec(), f_ = f.vec(), g_ = g.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -319,7 +345,7 @@ std::tuple<Tensor, Tensor> checkpoint_cudnn_convolution_transpose_backward(const
   return {ret[0], ret[1]};
 }
 
-Tensor checkpoint_cudnn_convolution_backward_input(c10::ArrayRef<long> a, const Tensor& b, const Tensor& c, c10::ArrayRef<long> d, c10::ArrayRef<long> e, c10::ArrayRef<long> f, long g, bool h, bool i, bool j) {
+Tensor checkpoint_cudnn_convolution_backward_input(IntArrayRef a, const Tensor& b, const Tensor& c, IntArrayRef d, IntArrayRef e, IntArrayRef f, long g, bool h, bool i, bool j) {
   std::vector<long> a_ = a.vec(), d_ = d.vec(), e_ = e.vec(), f_ = f.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -328,7 +354,7 @@ Tensor checkpoint_cudnn_convolution_backward_input(c10::ArrayRef<long> a, const 
   return CheckpointTensorImpl::make("cudnn_convolution_backward_input", rt, {b, c})[0];
 }
 
-Tensor checkpoint_cudnn_convolution_transpose_backward_input(const Tensor& a, const Tensor& b, c10::ArrayRef<long> c, c10::ArrayRef<long> d, c10::ArrayRef<long> e, long f, bool g, bool h, bool i) {
+Tensor checkpoint_cudnn_convolution_transpose_backward_input(const Tensor& a, const Tensor& b, IntArrayRef c, IntArrayRef d, IntArrayRef e, long f, bool g, bool h, bool i) {
   std::vector<long> c_ = c.vec(), d_ = d.vec(), e_ = e.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -346,7 +372,7 @@ Tensor checkpoint_cudnn_convolution_backward_weight(IntArrayRef a, const Tensor 
   return CheckpointTensorImpl::make("cudnn_convolution_backward_weight", rt, {b, c})[0];
 }
 
-Tensor checkpoint_cudnn_convolution_transpose_backward_weight(c10::ArrayRef<long> a, const Tensor& b, const Tensor& c, c10::ArrayRef<long> d, c10::ArrayRef<long> e, c10::ArrayRef<long> f, long g, bool h, bool i, bool j) {
+Tensor checkpoint_cudnn_convolution_transpose_backward_weight(IntArrayRef a, const Tensor& b, const Tensor& c, IntArrayRef d, IntArrayRef e, IntArrayRef f, long g, bool h, bool i, bool j) {
   std::vector<long> a_ = a.vec(), d_ = d.vec(), e_ = e.vec(), f_ = f.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -390,7 +416,7 @@ Tensor& checkpoint_log_out(at::Tensor& a, at::Tensor const& b) {
   return a;
 }
 
-Tensor checkpoint_rsub(at::Tensor const& a, at::Tensor const& b, c10::Scalar c) {
+Tensor checkpoint_rsub(at::Tensor const& a, at::Tensor const& b, Scalar c) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::rsub(vec.at(0), vec.at(1), c)};
@@ -398,7 +424,7 @@ Tensor checkpoint_rsub(at::Tensor const& a, at::Tensor const& b, c10::Scalar c) 
   return CheckpointTensorImpl::make("rsub", rt, {a, b})[0];
 }
 
-Tensor checkpoint_rsub(at::Tensor const& a, c10::Scalar b, c10::Scalar c) {
+Tensor checkpoint_rsub(at::Tensor const& a, Scalar b, Scalar c) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::rsub(vec.at(0), b, c)};
@@ -406,7 +432,7 @@ Tensor checkpoint_rsub(at::Tensor const& a, c10::Scalar b, c10::Scalar c) {
   return CheckpointTensorImpl::make("rsub", rt, {a})[0];
 }
 
-Tensor checkpoint_mul(at::Tensor const& a, c10::Scalar b) {
+Tensor checkpoint_mul(at::Tensor const& a, Scalar b) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::mul(vec.at(0), b)};
@@ -414,7 +440,7 @@ Tensor checkpoint_mul(at::Tensor const& a, c10::Scalar b) {
   return CheckpointTensorImpl::make("mul", rt, {a})[0];
 }
 
-std::tuple<Tensor&, Tensor&> checkpoint_max_pool2d_with_indices_out(Tensor& a, Tensor& b, const Tensor& c, c10::ArrayRef<long> d, c10::ArrayRef<long> e, c10::ArrayRef<long> f, c10::ArrayRef<long> g, bool h) {
+std::tuple<Tensor&, Tensor&> checkpoint_max_pool2d_with_indices_out(Tensor& a, Tensor& b, const Tensor& c, IntArrayRef d, IntArrayRef e, IntArrayRef f, IntArrayRef g, bool h) {
   std::vector<long> d_ = d.vec(), e_ = e.vec(), f_ = f.vec(), g_ = g.vec();
   mutate_function_t mt =
     [=](const Tensors& vec) {
@@ -425,7 +451,7 @@ std::tuple<Tensor&, Tensor&> checkpoint_max_pool2d_with_indices_out(Tensor& a, T
   return {a, b};
 }
 
-Tensor checkpoint_avg_pool2d(const Tensor& a, c10::ArrayRef<long> b, c10::ArrayRef<long> c, c10::ArrayRef<long> d, bool e, bool f, c10::optional<long> g) {
+Tensor checkpoint_avg_pool2d(const Tensor& a, IntArrayRef b, IntArrayRef c, IntArrayRef d, bool e, bool f, optional<long> g) {
   std::vector<long> b_ = b.vec(), c_ = c.vec(), d_ = d.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -434,7 +460,7 @@ Tensor checkpoint_avg_pool2d(const Tensor& a, c10::ArrayRef<long> b, c10::ArrayR
   return CheckpointTensorImpl::make("avg_pool2d", rt, {a})[0];
 }
 
-Tensor checkpoint_avg_pool2d_backward(const Tensor& a, const Tensor& b, c10::ArrayRef<long> c, c10::ArrayRef<long> d, c10::ArrayRef<long> e, bool f, bool g, c10::optional<long> h) {
+Tensor checkpoint_avg_pool2d_backward(const Tensor& a, const Tensor& b, IntArrayRef c, IntArrayRef d, IntArrayRef e, bool f, bool g, optional<long> h) {
   std::vector<long> c_ = c.vec(), d_ = d.vec(), e_ = e.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -443,7 +469,7 @@ Tensor checkpoint_avg_pool2d_backward(const Tensor& a, const Tensor& b, c10::Arr
   return CheckpointTensorImpl::make("avg_pool2d_backward", rt, {a, b})[0];
 }
 
-Tensor& checkpoint_avg_pool2d_out(Tensor& a, const Tensor& b, c10::ArrayRef<long> c, c10::ArrayRef<long> d, c10::ArrayRef<long> e, bool f, bool g, c10::optional<long> h) {
+Tensor& checkpoint_avg_pool2d_out(Tensor& a, const Tensor& b, IntArrayRef c, IntArrayRef d, IntArrayRef e, bool f, bool g, optional<long> h) {
   std::vector<long> c_ = c.vec(), d_ = d.vec(), e_ = e.vec();
   mutate_function_t mt =
     [=](const Tensors& vec) {
@@ -454,7 +480,7 @@ Tensor& checkpoint_avg_pool2d_out(Tensor& a, const Tensor& b, c10::ArrayRef<long
   return a;
 }
 
-Tensor& checkpoint_avg_pool2d_backward_grad_input(Tensor& a, const Tensor& b, const Tensor& c, c10::ArrayRef<long> d, c10::ArrayRef<long> e, c10::ArrayRef<long> f, bool g, bool h, c10::optional<long> i) {
+Tensor& checkpoint_avg_pool2d_backward_grad_input(Tensor& a, const Tensor& b, const Tensor& c, IntArrayRef d, IntArrayRef e, IntArrayRef f, bool g, bool h, optional<long> i) {
   std::vector<long> d_ = d.vec(), e_ = e.vec(), f_ = f.vec();
   mutate_function_t mt =
     [=](const Tensors& vec) {
@@ -465,7 +491,7 @@ Tensor& checkpoint_avg_pool2d_backward_grad_input(Tensor& a, const Tensor& b, co
   return a;
 }
 
-std::tuple<Tensor, Tensor> checkpoint_max_pool2d_with_indices(const Tensor& a, c10::ArrayRef<long> b, c10::ArrayRef<long> c, c10::ArrayRef<long> d, c10::ArrayRef<long> e, bool f) {
+std::tuple<Tensor, Tensor> checkpoint_max_pool2d_with_indices(const Tensor& a, IntArrayRef b, IntArrayRef c, IntArrayRef d, IntArrayRef e, bool f) {
   std::vector<long> b_ = b.vec(), c_ = c.vec(), d_ = d.vec(), e_ = e.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -476,7 +502,7 @@ std::tuple<Tensor, Tensor> checkpoint_max_pool2d_with_indices(const Tensor& a, c
   return {ret[0], ret[1]};
 }
 
-Tensor& checkpoint_max_pool2d_with_indices_backward_grad_input(Tensor& a, const Tensor& b, const Tensor& c, c10::ArrayRef<long> d, c10::ArrayRef<long> e, c10::ArrayRef<long> f, c10::ArrayRef<long> g, bool h, const Tensor& i) {
+Tensor& checkpoint_max_pool2d_with_indices_backward_grad_input(Tensor& a, const Tensor& b, const Tensor& c, IntArrayRef d, IntArrayRef e, IntArrayRef f, IntArrayRef g, bool h, const Tensor& i) {
   std::vector<long> d_ = d.vec(), e_ = e.vec(), f_ = f.vec(), g_ = g.vec();
   mutate_function_t mt =
     [=](const Tensors& vec) {
@@ -487,7 +513,7 @@ Tensor& checkpoint_max_pool2d_with_indices_backward_grad_input(Tensor& a, const 
   return a;
 }
 
-Tensor checkpoint_max_pool2d_with_indices_backward(const Tensor& a, const Tensor& b, c10::ArrayRef<long> c, c10::ArrayRef<long> d, c10::ArrayRef<long> e, c10::ArrayRef<long> f, bool g, const Tensor& h) {
+Tensor checkpoint_max_pool2d_with_indices_backward(const Tensor& a, const Tensor& b, IntArrayRef c, IntArrayRef d, IntArrayRef e, IntArrayRef f, bool g, const Tensor& h) {
   std::vector<long> c_ = c.vec(), d_ = d.vec(), e_ = e.vec(), f_ = f.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -496,7 +522,7 @@ Tensor checkpoint_max_pool2d_with_indices_backward(const Tensor& a, const Tensor
   return CheckpointTensorImpl::make("max_pool2d_with_indices_backward", rt, {a, b, h})[0];
 }
 
-Tensor checkpoint_view(const Tensor& a, c10::ArrayRef<long> b) {
+Tensor checkpoint_view(const Tensor& a, IntArrayRef b) {
   std::vector<long> b_ = b.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -505,7 +531,7 @@ Tensor checkpoint_view(const Tensor& a, c10::ArrayRef<long> b) {
   return CheckpointTensorImpl::make("view", rt, {a})[0];
 }
 
-Tensor checkpoint_ne_Scalar(const Tensor& a, c10::Scalar b) {
+Tensor checkpoint_ne_Scalar(const Tensor& a, Scalar b) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::ne(vec.at(0), b)};
@@ -513,7 +539,7 @@ Tensor checkpoint_ne_Scalar(const Tensor& a, c10::Scalar b) {
   return CheckpointTensorImpl::make("ne_Scalar", rt, {a})[0];
 }
 
-Tensor& checkpoint_ne_Scalar_out(Tensor& a, const Tensor& b, c10::Scalar c) {
+Tensor& checkpoint_ne_Scalar_out(Tensor& a, const Tensor& b, Scalar c) {
   mutate_function_t mt =
     [=](const Tensors& vec) {
       Tensor a_ = vec.at(0);
@@ -541,7 +567,7 @@ Tensor& checkpoint_ne_Tensor_out(Tensor& a, const Tensor& b, const Tensor& c) {
   return a;
 }
 
-Tensor checkpoint_eq_Scalar(const Tensor& a, c10::Scalar b) {
+Tensor checkpoint_eq_Scalar(const Tensor& a, Scalar b) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::eq(vec.at(0), b)};
@@ -549,7 +575,7 @@ Tensor checkpoint_eq_Scalar(const Tensor& a, c10::Scalar b) {
   return CheckpointTensorImpl::make("eq_Scalar", rt, {a})[0];
 }
 
-Tensor& checkpoint_eq_Scalar_out(Tensor& a, const Tensor& b, c10::Scalar c) {
+Tensor& checkpoint_eq_Scalar_out(Tensor& a, const Tensor& b, Scalar c) {
   mutate_function_t mt =
     [=](const Tensors& vec) {
       Tensor a_ = vec.at(0);
@@ -577,7 +603,7 @@ Tensor& checkpoint_eq_Tensor_out(Tensor& a, const Tensor& b, const Tensor& c) {
   return a;
 }
 
-Tensor checkpoint_addmm(const Tensor& a, const Tensor& b, const Tensor& c, c10::Scalar d, c10::Scalar e) {
+Tensor checkpoint_addmm(const Tensor& a, const Tensor& b, const Tensor& c, Scalar d, Scalar e) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::addmm(vec.at(0), vec.at(1), vec.at(2), d, e)};
@@ -585,7 +611,7 @@ Tensor checkpoint_addmm(const Tensor& a, const Tensor& b, const Tensor& c, c10::
   return CheckpointTensorImpl::make("addmm", rt, {a, b, c})[0];
 }
 
-Tensor& checkpoint_addmm_out(Tensor& a, const Tensor& b, const Tensor& c, const Tensor& d, c10::Scalar e, c10::Scalar f) {
+Tensor& checkpoint_addmm_out(Tensor& a, const Tensor& b, const Tensor& c, const Tensor& d, Scalar e, Scalar f) {
   mutate_function_t mt =
     [=](const Tensors& vec) {
       Tensor a_ = vec.at(0);
@@ -595,7 +621,7 @@ Tensor& checkpoint_addmm_out(Tensor& a, const Tensor& b, const Tensor& c, const 
   return a;
 }
 
-Tensor& checkpoint_addmm_(Tensor& a, const Tensor& b, const Tensor& c, c10::Scalar d, c10::Scalar e) {
+Tensor& checkpoint_addmm_(Tensor& a, const Tensor& b, const Tensor& c, Scalar d, Scalar e) {
   mutate_function_t mt =
     [=](const Tensors& vec) {
       Tensor a_ = vec.at(0);
@@ -696,7 +722,7 @@ Tensor& checkpoint_mm_out(Tensor& a, const Tensor& b, const Tensor& c) {
   return a;
 }
 
-Tensor checkpoint_sum(const Tensor& a, c10::optional<c10::ScalarType> b) {
+Tensor checkpoint_sum(const Tensor& a, optional<ScalarType> b) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::sum(vec.at(0), b)};
@@ -704,7 +730,7 @@ Tensor checkpoint_sum(const Tensor& a, c10::optional<c10::ScalarType> b) {
   return CheckpointTensorImpl::make("sum", rt, {a})[0];
 }
 
-Tensor checkpoint_sum_dim_IntList(const Tensor& a, c10::ArrayRef<long> b, bool c, c10::optional<c10::ScalarType> d) {
+Tensor checkpoint_sum_dim_IntList(const Tensor& a, IntArrayRef b, bool c, optional<ScalarType> d) {
   std::vector<long> b_ = b.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -713,7 +739,7 @@ Tensor checkpoint_sum_dim_IntList(const Tensor& a, c10::ArrayRef<long> b, bool c
   return CheckpointTensorImpl::make("sum_dim_IntList", rt, {a})[0];
 }
 
-Tensor checkpoint_threshold(const Tensor& a, c10::Scalar b, c10::Scalar c) {
+Tensor checkpoint_threshold(const Tensor& a, Scalar b, Scalar c) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::threshold(vec.at(0), b, c)};
@@ -721,7 +747,7 @@ Tensor checkpoint_threshold(const Tensor& a, c10::Scalar b, c10::Scalar c) {
   return CheckpointTensorImpl::make("threshold", rt, {a})[0];
 }
 
-Tensor& checkpoint_threshold_(Tensor& a, c10::Scalar b, c10::Scalar c) {
+Tensor& checkpoint_threshold_(Tensor& a, Scalar b, Scalar c) {
   mutate_function_t mt =
     [=](const Tensors& vec) {
       Tensor a_ = vec.at(0);
@@ -731,7 +757,7 @@ Tensor& checkpoint_threshold_(Tensor& a, c10::Scalar b, c10::Scalar c) {
   return a;
 }
 
-Tensor& checkpoint_threshold_out(Tensor& a, const Tensor& b, c10::Scalar c, c10::Scalar d) {
+Tensor& checkpoint_threshold_out(Tensor& a, const Tensor& b, Scalar c, Scalar d) {
   mutate_function_t mt =
     [=](const Tensors& vec) {
       Tensor a_ = vec.at(0);
@@ -741,7 +767,7 @@ Tensor& checkpoint_threshold_out(Tensor& a, const Tensor& b, c10::Scalar c, c10:
   return a;
 }
 
-Tensor checkpoint_threshold_backward(const Tensor& a, const Tensor& b, c10::Scalar c) {
+Tensor checkpoint_threshold_backward(const Tensor& a, const Tensor& b, Scalar c) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::threshold_backward(vec.at(0), vec.at(1), c)};
@@ -757,7 +783,7 @@ Tensor checkpoint_select(const Tensor& a, long b, long c) {
   return CheckpointTensorImpl::make("select", rt, {a})[0];
 }
 
-Tensor checkpoint_select_backward(const Tensor& a, c10::ArrayRef<long> b, long c, long d) {
+Tensor checkpoint_select_backward(const Tensor& a, IntArrayRef b, long c, long d) {
   std::vector<long> b_ = b.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -774,7 +800,7 @@ Tensor checkpoint_slice(const Tensor& a, long b, long c, long d, long e) {
   return CheckpointTensorImpl::make("slice", rt, {a})[0];
 }
 
-Tensor checkpoint_slice_backward(const Tensor& a, c10::ArrayRef<long> b, long c, long d, long e, long f) {
+Tensor checkpoint_slice_backward(const Tensor& a, IntArrayRef b, long c, long d, long e, long f) {
   std::vector<long> b_ = b.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -889,7 +915,7 @@ Tensor checkpoint_neg(at::Tensor const& a) {
   return CheckpointTensorImpl::make("neg", rt, {a})[0];
 }
 
-Tensor checkpoint_sub(at::Tensor const& a, at::Tensor const& b, c10::Scalar c) {
+Tensor checkpoint_sub(at::Tensor const& a, at::Tensor const& b, Scalar c) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::sub(vec.at(0), vec.at(1), c)};
@@ -897,7 +923,7 @@ Tensor checkpoint_sub(at::Tensor const& a, at::Tensor const& b, c10::Scalar c) {
   return CheckpointTensorImpl::make("sub", rt, {a, b})[0];
 }
 
-Tensor& checkpoint_sub_(at::Tensor& a, at::Tensor const& b, c10::Scalar c) {
+Tensor& checkpoint_sub_(at::Tensor& a, at::Tensor const& b, Scalar c) {
   mutate_function_t mt =
     [=](const Tensors& vec) {
     Tensor self = vec.at(0);
@@ -907,7 +933,25 @@ Tensor& checkpoint_sub_(at::Tensor& a, at::Tensor const& b, c10::Scalar c) {
   return a;
 }
 
-Tensor checkpoint_repeat(const at::Tensor& a, c10::ArrayRef<long> b) {
+Tensor checkpoint_sub(at::Tensor const& a, Scalar b, Scalar c) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::sub(vec.at(0), b, c)};
+    };
+  return CheckpointTensorImpl::make("sub", rt, {a})[0];
+}
+
+Tensor& checkpoint_sub_(at::Tensor& a, Scalar b, Scalar c) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      Tensor self = vec.at(0);
+      self.sub_(b, c);
+    };
+  CheckpointTensorImpl::mutate("sub_", mt, {a}, {0});
+  return a;
+}
+
+Tensor checkpoint_repeat(const at::Tensor& a, IntArrayRef b) {
   std::vector<long> b_ = b.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -916,7 +960,7 @@ Tensor checkpoint_repeat(const at::Tensor& a, c10::ArrayRef<long> b) {
   return CheckpointTensorImpl::make("repeat", rt, {a})[0];
 }
 
-Tensor checkpoint_mean(const Tensor& self, c10::optional<c10::ScalarType> dtype) {
+Tensor checkpoint_mean(const Tensor& self, optional<ScalarType> dtype) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
     return {at::native::mean_cpu_gpu(vec[0], dtype)};
@@ -924,7 +968,7 @@ Tensor checkpoint_mean(const Tensor& self, c10::optional<c10::ScalarType> dtype)
   return CheckpointTensorImpl::make("mean", rt, {self})[0];
 }
 
-Tensor checkpoint_mean(const Tensor& self, IntArrayRef dim, bool keepdim, c10::optional<c10::ScalarType> dtype) {
+Tensor checkpoint_mean(const Tensor& self, IntArrayRef dim, bool keepdim, optional<ScalarType> dtype) {
   std::vector<long> dim_ = dim.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -933,7 +977,7 @@ Tensor checkpoint_mean(const Tensor& self, IntArrayRef dim, bool keepdim, c10::o
   return CheckpointTensorImpl::make("mean.dim", rt, {self})[0];
 }
 
-Tensor checkpoint__cat(c10::ArrayRef<Tensor> a, long b) {
+Tensor checkpoint__cat(ArrayRef<Tensor> a, long b) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
       return {at::cat(vec, b)};
@@ -945,7 +989,7 @@ Tensor checkpoint__cat(c10::ArrayRef<Tensor> a, long b) {
   return CheckpointTensorImpl::make("_cat", rt, s)[0];
 }
 
-Tensor& checkpoint__cat_out(Tensor& a, c10::ArrayRef<Tensor> b, long c) {
+Tensor& checkpoint__cat_out(Tensor& a, ArrayRef<Tensor> b, long c) {
   std::vector<Tensor> args;
   args.push_back(a);
   for (const Tensor& t : b) {
@@ -957,6 +1001,33 @@ Tensor& checkpoint__cat_out(Tensor& a, c10::ArrayRef<Tensor> b, long c) {
       at::cat_out(t, ArrayRef<Tensor>(vec.data() + 1, vec.size() - 1), c);
     };
   CheckpointTensorImpl::mutate("_cat_out", mt, args, {0});
+  return a;
+}
+
+Tensor checkpoint_cat(ArrayRef<Tensor> a, long b) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::cat(vec, b)};
+    };
+  std::vector<Tensor> s;
+  for (const Tensor& t : a) {
+    s.push_back(t);
+  }
+  return CheckpointTensorImpl::make("cat", rt, s)[0];
+}
+
+Tensor& checkpoint_cat_out(Tensor& a, ArrayRef<Tensor> b, long c) {
+  std::vector<Tensor> args;
+  args.push_back(a);
+  for (const Tensor& t : b) {
+    args.push_back(t);
+  }
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      Tensor t = vec[0];
+      at::cat_out(t, ArrayRef<Tensor>(vec.data() + 1, vec.size() - 1), c);
+    };
+  CheckpointTensorImpl::mutate("cat_out", mt, args, {0});
   return a;
 }
 
@@ -976,7 +1047,7 @@ Tensor checkpoint_kl_div_backward(at::Tensor const& a, at::Tensor const& b, at::
   return CheckpointTensorImpl::make("kl_div_backward", rt, {a, b, c})[0];
 }
 
-Tensor checkpoint_upsample_bilinear2d(at::Tensor const& self, c10::ArrayRef<long> output_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w) {
+Tensor checkpoint_upsample_bilinear2d(at::Tensor const& self, IntArrayRef output_size, bool align_corners, optional<double> scales_h, optional<double> scales_w) {
   std::vector<long> output_size_ = output_size.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -985,7 +1056,7 @@ Tensor checkpoint_upsample_bilinear2d(at::Tensor const& self, c10::ArrayRef<long
   return CheckpointTensorImpl::make("upsample_bilinear2d", rt, {self})[0];
 }
 
-Tensor& checkpoint_upsample_bilinear2d_out(at::Tensor& out, const at::Tensor& self, c10::ArrayRef<long> output_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w) {
+Tensor& checkpoint_upsample_bilinear2d_out(at::Tensor& out, const at::Tensor& self, IntArrayRef output_size, bool align_corners, optional<double> scales_h, optional<double> scales_w) {
   std::vector<long> output_size_ = output_size.vec();
   mutate_function_t mt =
     [=](const Tensors& vec) {
@@ -996,7 +1067,7 @@ Tensor& checkpoint_upsample_bilinear2d_out(at::Tensor& out, const at::Tensor& se
   return out;
 }
 
-Tensor& checkpoint_upsample_bilinear2d_backward_out(at::Tensor& grad_input, const at::Tensor& grad_output, c10::ArrayRef<long> output_size, c10::ArrayRef<long> input_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w) {
+Tensor& checkpoint_upsample_bilinear2d_backward_out(at::Tensor& grad_input, const at::Tensor& grad_output, IntArrayRef output_size, IntArrayRef input_size, bool align_corners, optional<double> scales_h, optional<double> scales_w) {
   std::vector<long> output_size_ = output_size.vec();
   std::vector<long> input_size_ = input_size.vec();
   mutate_function_t mt =
@@ -1008,7 +1079,7 @@ Tensor& checkpoint_upsample_bilinear2d_backward_out(at::Tensor& grad_input, cons
   return grad_input;
 }
 
-Tensor checkpoint_upsample_bilinear2d_backward(at::Tensor const& grad_output, c10::ArrayRef<long> output_size, c10::ArrayRef<long> input_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w) {
+Tensor checkpoint_upsample_bilinear2d_backward(at::Tensor const& grad_output, IntArrayRef output_size, IntArrayRef input_size, bool align_corners, optional<double> scales_h, optional<double> scales_w) {
   std::vector<long> output_size_ = output_size.vec();
   std::vector<long> input_size_ = input_size.vec();
   rematerialize_function_t rt =
@@ -1054,7 +1125,7 @@ Tensor checkpoint_binary_cross_entropy_with_logits_backward(const Tensor& grad, 
   return CheckpointTensorImpl::make("binary_cross_entropy_with_logits_backward", rt, {grad, input, target, weight, pos_weight})[0];
 }
 
-std::tuple<Tensor, Tensor> checkpoint__fused_dropout(const Tensor & self, double p, c10::optional<Generator> g) {
+std::tuple<Tensor, Tensor> checkpoint__fused_dropout(const Tensor & self, double p, optional<Generator> g) {
   // TODO: Figure out how to properly duplicate the generator;
   // note that the commented-out code below results in a segfault!
   // Ref<std::shared_ptr<Generator>> gen;
@@ -1335,7 +1406,7 @@ Tensor& checkpoint_masked_fill_(Tensor& self, const Tensor& mask, const Tensor& 
   return {self};
 }
 
-Tensor checkpoint_clamp(const Tensor& self, c10::optional<Scalar> min, c10::optional<Scalar> max) {
+Tensor checkpoint_clamp(const Tensor& self, optional<Scalar> min, optional<Scalar> max) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
     return {at::clamp(vec.at(0), min, max)};
@@ -1343,7 +1414,7 @@ Tensor checkpoint_clamp(const Tensor& self, c10::optional<Scalar> min, c10::opti
   return CheckpointTensorImpl::make("clamp", rt, {self})[0];
 }
 
-Tensor& checkpoint_clamp_(Tensor& self, c10::optional<Scalar> min, c10::optional<Scalar> max) {
+Tensor& checkpoint_clamp_(Tensor& self, optional<Scalar> min, optional<Scalar> max) {
   mutate_function_t mt =
     [=](const Tensors& vec) {
     Tensor self_ = vec.at(0);
@@ -1353,7 +1424,7 @@ Tensor& checkpoint_clamp_(Tensor& self, c10::optional<Scalar> min, c10::optional
   return {self};
 }
 
-Tensor& checkpoint_clamp_out(Tensor& out, const Tensor& self, c10::optional<Scalar> min, c10::optional<Scalar> max) {
+Tensor& checkpoint_clamp_out(Tensor& out, const Tensor& self, optional<Scalar> min, optional<Scalar> max) {
   mutate_function_t mt =
     [=](const Tensors& vec) {
     Tensor out_ = vec.at(0);
@@ -1363,7 +1434,7 @@ Tensor& checkpoint_clamp_out(Tensor& out, const Tensor& self, c10::optional<Scal
   return {out};
 }
 
-std::tuple<Tensor&, Tensor&, Tensor&> checkpoint_thnn_conv2d_forward_out(Tensor& output, Tensor& finput, Tensor& fgrad_input, const Tensor& self, const Tensor& weight, c10::ArrayRef<long> kernel_size, const Tensor& bias, c10::ArrayRef<long> stride, c10::ArrayRef<long> padding) {
+std::tuple<Tensor&, Tensor&, Tensor&> checkpoint_thnn_conv2d_forward_out(Tensor& output, Tensor& finput, Tensor& fgrad_input, const Tensor& self, const Tensor& weight, IntArrayRef kernel_size, const Tensor& bias, IntArrayRef stride, IntArrayRef padding) {
   auto kernel_size_ = kernel_size.vec();
   auto stride_ = stride.vec();
   auto padding_ = padding.vec();
@@ -1378,7 +1449,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> checkpoint_thnn_conv2d_forward_out(Tensor&
   return {output, finput, fgrad_input};
 }
 
-std::tuple<Tensor, Tensor, Tensor> checkpoint_thnn_conv2d_forward(const Tensor& self, const Tensor& weight, c10::ArrayRef<long> kernel_size, const Tensor& bias, c10::ArrayRef<long> stride, c10::ArrayRef<long> padding) {
+std::tuple<Tensor, Tensor, Tensor> checkpoint_thnn_conv2d_forward(const Tensor& self, const Tensor& weight, IntArrayRef kernel_size, const Tensor& bias, IntArrayRef stride, IntArrayRef padding) {
   auto kernel_size_ = kernel_size.vec();
   auto stride_ = stride.vec();
   auto padding_ = padding.vec();
@@ -1391,7 +1462,7 @@ std::tuple<Tensor, Tensor, Tensor> checkpoint_thnn_conv2d_forward(const Tensor& 
   return {ret[0], ret[1], ret[2]};
 }
 
-std::tuple<Tensor&, Tensor&, Tensor&> checkpoint_thnn_conv2d_backward_out(Tensor& grad_input, Tensor& grad_weight, Tensor& grad_bias, const Tensor& grad_output, const Tensor& self, const Tensor& weight, c10::ArrayRef<long> kernel_size, c10::ArrayRef<long> stride, c10::ArrayRef<long> padding, const Tensor& finput, const Tensor& fgrad_input) {
+std::tuple<Tensor&, Tensor&, Tensor&> checkpoint_thnn_conv2d_backward_out(Tensor& grad_input, Tensor& grad_weight, Tensor& grad_bias, const Tensor& grad_output, const Tensor& self, const Tensor& weight, IntArrayRef kernel_size, IntArrayRef stride, IntArrayRef padding, const Tensor& finput, const Tensor& fgrad_input) {
   auto kernel_size_ = kernel_size.vec();
   auto stride_ = stride.vec();
   auto padding_ = padding.vec();
@@ -1406,7 +1477,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> checkpoint_thnn_conv2d_backward_out(Tensor
   return {grad_input, grad_weight, grad_bias};
 }
 
-std::tuple<Tensor, Tensor, Tensor> checkpoint_thnn_conv2d_backward(const Tensor& grad_output, const Tensor& self, const Tensor& weight, c10::ArrayRef<long> kernel_size, c10::ArrayRef<long> stride, c10::ArrayRef<long> padding, const Tensor& finput, const Tensor& fgrad_input, std::array<bool, 3ul> output_mask) {
+std::tuple<Tensor, Tensor, Tensor> checkpoint_thnn_conv2d_backward(const Tensor& grad_output, const Tensor& self, const Tensor& weight, IntArrayRef kernel_size, IntArrayRef stride, IntArrayRef padding, const Tensor& finput, const Tensor& fgrad_input, std::array<bool, 3ul> output_mask) {
   auto kernel_size_ = kernel_size.vec();
   auto stride_ = stride.vec();
   auto padding_ = padding.vec();
@@ -1451,7 +1522,7 @@ std::tuple<Tensor, Tensor, Tensor> checkpoint_native_batch_norm_backward(const T
   return {ret[0], ret[1], ret[2]};
 }
 
-std::tuple<Tensor, Tensor> checkpoint__cudnn_ctc_loss(const Tensor& log_probs, const Tensor& targets, ArrayRef<long> input_lengths, ArrayRef<long> target_lengths, long blank, bool deterministic, bool zero_infinity) {
+std::tuple<Tensor, Tensor> checkpoint__cudnn_ctc_loss(const Tensor& log_probs, const Tensor& targets, IntArrayRef input_lengths, IntArrayRef target_lengths, long blank, bool deterministic, bool zero_infinity) {
   auto input_lengths_ = input_lengths.vec();
   auto target_lengths_ = target_lengths.vec();
   rematerialize_function_t rt =
@@ -1463,7 +1534,7 @@ std::tuple<Tensor, Tensor> checkpoint__cudnn_ctc_loss(const Tensor& log_probs, c
   return {ret[0], ret[1]};
 }
 
-std::tuple<Tensor, Tensor> checkpoint__ctc_loss(const Tensor& log_probs, const Tensor& targets, ArrayRef<long> input_lengths, ArrayRef<long> target_lengths,  long blank, bool zero_infinity) {
+std::tuple<Tensor, Tensor> checkpoint__ctc_loss(const Tensor& log_probs, const Tensor& targets, IntArrayRef input_lengths, IntArrayRef target_lengths,  long blank, bool zero_infinity) {
   auto input_lengths_ = input_lengths.vec();
   auto target_lengths_ = target_lengths.vec();
   rematerialize_function_t rt =
@@ -1475,7 +1546,7 @@ std::tuple<Tensor, Tensor> checkpoint__ctc_loss(const Tensor& log_probs, const T
   return {ret[0], ret[1]};
 }
 
-Tensor checkpoint__ctc_loss_backward(const Tensor& grad, const Tensor& log_probs, const Tensor& targets, ArrayRef<long> input_lengths, ArrayRef<long> target_lengths, const Tensor& neg_log_likelihood, const Tensor& log_alpha, long blank, bool zero_infinity) {
+Tensor checkpoint__ctc_loss_backward(const Tensor& grad, const Tensor& log_probs, const Tensor& targets, IntArrayRef input_lengths, IntArrayRef target_lengths, const Tensor& neg_log_likelihood, const Tensor& log_alpha, long blank, bool zero_infinity) {
   auto input_lengths_ = input_lengths.vec();
   auto target_lengths_ = target_lengths.vec();
   rematerialize_function_t rt =
@@ -1565,7 +1636,7 @@ Tensor checkpoint_any(const Tensor& self) {
   return CheckpointTensorImpl::make("any", rt, {self})[0];
 }
 
-bool checkpoint__use_cudnn_ctc_loss(const Tensor& log_probs, const Tensor& targets, ArrayRef<long> input_lengths, ArrayRef<long> target_lengths, long blank) {
+bool checkpoint__use_cudnn_ctc_loss(const Tensor& log_probs, const Tensor& targets, IntArrayRef input_lengths, IntArrayRef target_lengths, long blank) {
   return at::_use_cudnn_ctc_loss(decheckpoint(log_probs), decheckpoint(targets), input_lengths, target_lengths, blank);
 }
 
@@ -1579,7 +1650,7 @@ Scalar checkpoint__local_scalar_dense(at::Tensor const& a) {
   return at::_local_scalar_dense(decheckpoint(a));
 }
 
-Tensor checkpoint_split_with_sizes_backward(c10::ArrayRef<at::Tensor> a, c10::ArrayRef<long> b, long c, c10::ArrayRef<long> d, c10::TensorOptions const& e) {
+Tensor checkpoint_split_with_sizes_backward(ArrayRef<at::Tensor> a, IntArrayRef b, long c, IntArrayRef d, TensorOptions const& e) {
   std::vector<Tensor> a_ = a.vec();
   std::vector<long> d_ = d.vec();
   rematerialize_function_t rt =
@@ -1589,7 +1660,7 @@ Tensor checkpoint_split_with_sizes_backward(c10::ArrayRef<at::Tensor> a, c10::Ar
   return CheckpointTensorImpl::make("split_with_sizes_backward", rt, a_)[0];
 }
 
-std::vector<Tensor> checkpoint_split_with_sizes(at::Tensor const& a, c10::ArrayRef<long> b, long c) {
+std::vector<Tensor> checkpoint_split_with_sizes(at::Tensor const& a, IntArrayRef b, long c) {
   std::vector<long> b_ = b.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -1598,7 +1669,7 @@ std::vector<Tensor> checkpoint_split_with_sizes(at::Tensor const& a, c10::ArrayR
   return CheckpointTensorImpl::make("split_with_sizes", rt, {a});
 }
 
-Tensor checkpoint_split_backward(c10::ArrayRef<at::Tensor> a, long b, long c, c10::ArrayRef<long> d, const c10::TensorOptions& e) {
+Tensor checkpoint_split_backward(ArrayRef<at::Tensor> a, long b, long c, IntArrayRef d, const TensorOptions& e) {
   std::vector<Tensor> a_ = a.vec();
   std::vector<long> d_ = d.vec();
   rematerialize_function_t rt =
@@ -1616,7 +1687,7 @@ std::vector<Tensor> checkpoint_split(const at::Tensor& a, long b, long c) {
   return CheckpointTensorImpl::make("split", rt, {a});
 }
 
-Tensor checkpoint_expand(at::Tensor const& a, c10::ArrayRef<long> b, bool c) {
+Tensor checkpoint_expand(at::Tensor const& a, IntArrayRef b, bool c) {
   std::vector<long> b_ = b.vec();
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -1661,23 +1732,23 @@ Tensor& checkpoint_mv_out(at::Tensor& out, const Tensor& self, const Tensor& vec
   return {out};
 }
 
-template<typename T> c10::optional<std::vector<T>> oar2ov (const c10::optional<c10::ArrayRef<T>>& oar) {
+template<typename T> optional<std::vector<T>> oar2ov (const optional<ArrayRef<T>>& oar) {
   if (oar) {
     return oar.value().vec();
   } else {
-    return c10::optional<std::vector<T>>();
+    return optional<std::vector<T>>();
   }
 }
 
-template<typename T> c10::optional<c10::ArrayRef<T>> ov2oar (const c10::optional<std::vector<T>>& ov) {
+template<typename T> optional<ArrayRef<T>> ov2oar (const optional<std::vector<T>>& ov) {
   if (ov) {
-    return c10::optional<c10::ArrayRef<T>>(ov.value());
+    return optional<ArrayRef<T>>(ov.value());
   } else {
-    return c10::optional<c10::ArrayRef<T>>();
+    return optional<ArrayRef<T>>();
   }
 }
 
-Tensor checkpoint_upsample_bilinear2d_backward(const Tensor& a, c10::optional<c10::ArrayRef<long>> b, c10::ArrayRef<long> c, bool d, c10::optional<c10::ArrayRef<double>> e) {
+Tensor checkpoint_upsample_bilinear2d_backward(const Tensor& a, optional<IntArrayRef> b, IntArrayRef c, bool d, optional<ArrayRef<double>> e) {
   auto b_ = oar2ov(b);
   auto c_ = c.vec();
   auto e_ = oar2ov(e);
@@ -1688,7 +1759,7 @@ Tensor checkpoint_upsample_bilinear2d_backward(const Tensor& a, c10::optional<c1
   return CheckpointTensorImpl::make("upsample_bilinear2d_backward", rt, {a})[0];
 }
 
-Tensor checkpoint_upsample_bilinear2d(const Tensor& a, c10::optional<c10::ArrayRef<long>> b, bool c, c10::optional<c10::ArrayRef<double>> d) {
+Tensor checkpoint_upsample_bilinear2d(const Tensor& a, optional<IntArrayRef> b, bool c, optional<ArrayRef<double>> d) {
   auto b_ = oar2ov(b);
   auto d_ = oar2ov(d);
   rematerialize_function_t rt =
@@ -1696,6 +1767,15 @@ Tensor checkpoint_upsample_bilinear2d(const Tensor& a, c10::optional<c10::ArrayR
       return {at::upsample_bilinear2d(vec.at(0), ov2oar(b_), c, ov2oar(d_))};
     };
   return CheckpointTensorImpl::make("upsample_bilinear2d", rt, {a})[0];
+}
+
+Tensor checkpoint_unsafe_view(at::Tensor const& a, IntArrayRef b) {
+  auto b_ = b.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::_unsafe_view(vec.at(0), b_)};
+    };
+  return CheckpointTensorImpl::make("unsafe_view", rt, {a})[0];
 }
 
 }}
