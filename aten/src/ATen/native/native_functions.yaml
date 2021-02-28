@@ -4331,6 +4331,7 @@
   device_guard: False
   dispatch:
     DefaultBackend: transpose
+    Checkpoint: checkpoint_transpose
 
 - func: transpose.Dimname(Tensor(a) self, Dimname dim0, Dimname dim1) -> Tensor(a)
   use_c10_dispatcher: full

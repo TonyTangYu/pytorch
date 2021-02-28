@@ -398,6 +398,14 @@ Tensor& checkpoint_relu_(Tensor& a) {
   return a;
 }
 
+Tensor checkpoint_transpose(const Tensor& a, long b, long c) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::transpose(vec.at(0), b, c)};
+    };
+  return CheckpointTensorImpl::make("transpose", rt, {a})[0];
+}
+
 Tensor checkpoint_log(at::Tensor const& a) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
