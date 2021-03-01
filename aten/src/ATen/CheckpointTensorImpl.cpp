@@ -223,6 +223,7 @@ bool malloc_evict() {
 }
 
 CheckpointPool::CheckpointPool() {
+  c10::cuda::CUDACachingAllocator::register_eviction(malloc_evict);
 }
 
 struct CheckpointFunctionsImpl: CheckpointFunctions {
@@ -573,7 +574,18 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
   Tensors raw_inputs = uncheckpoint(inputs);
   time_t pre = std::chrono::system_clock::now();
   malloc_evict_time_ = duration_t::zero();
-  auto raw_outputs = remat_f(raw_inputs);
+  Tensors raw_outputs = remat_f(raw_inputs);
+  /* loop:
+  try {
+  raw_outputs = remat_f(raw_inputs);
+  } catch (const c10::Error& e) {
+    bool b = pool.evict();
+    if (!b) {
+      throw e;
+    } else {
+      goto loop;
+    }
+    }*/
   time_t post = std::chrono::system_clock::now();
   pool.auto_evict();
   auto compute_time = post - pre - malloc_evict_time_;
@@ -631,7 +643,7 @@ CheckpointTensorImpl* get_cpti(const Tensor& t) {
 Tensors CheckpointTensorImpl::make(const std::string& name,
                                    const rematerialize_function_t& remat,
                                    const Tensors& inputs) {
-  STATS.track("CheckPointTensorImpl::make");
+  STATS.track("CheckpointTensorImpl::make");
   Tensors checkpointed_inputs = try_checkpoint(inputs);
   auto input_size = checkpointed_inputs.size();
 
