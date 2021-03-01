@@ -579,10 +579,17 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
   try {
     raw_outputs = remat_f(raw_inputs);
   } catch (const c10::Error& e) {
-    std::cout << "error possibly due to OOM... trying to evict." << std::endl;
+    // todo: there is three kinds of error:
+    // 0: normal error
+    // 1: pytorch allocator oom
+    // 2: cuda_malloc oom
+    // for 0 we cant do anything, and should rethrow asap
+    // for 1 we should evict and try again
+    // for 2 we should evict, empty cache and try again
+    // the current code assume all case is (2) - it work but is inefficient for (0) and (1).
     bool b = pool.evict();
+    c10::cuda::CUDACachingAllocator::emptyCache();
     if (!b) {
-      std::cout << "eviction failed. rethrowing error..." << std::endl;
       throw e;
     } else {
       goto loop;
