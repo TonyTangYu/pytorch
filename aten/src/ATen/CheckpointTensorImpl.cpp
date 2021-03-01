@@ -199,6 +199,7 @@ bool CheckpointPool::evict() {
     }
   }
   if (evict_idx != -1) {
+    shrunk = true;
     auto evict_from_idx = [&](size_t idx) {
                             auto ap_strong = aps[idx].lock();
                             TORCH_CHECK(ap_strong.defined());
