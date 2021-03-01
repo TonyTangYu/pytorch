@@ -452,7 +452,8 @@ struct CheckpointPool {
   bool ignore_small_tensors = true;
   bool has_memory_budget = false;
   long memory_budget;
-  void evict();
+  // return true iff progress is made
+  bool evict();
   void auto_evict();
   void clear_checkpointpool();
   void add(const intrusive_ptr<AliasPool>&);

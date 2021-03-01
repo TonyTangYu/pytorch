@@ -149,12 +149,13 @@ void CheckpointPool::auto_evict() {
   STATS.track("CheckpointPool::auto_evict");
   if (has_memory_budget) {
     while (current_memory() > memory_budget) {
-      evict();
+      bool progress = evict();
+      TORCH_CHECK(progress);
     }
   }
 }
 
-void CheckpointPool::evict() {
+bool CheckpointPool::evict() {
   time_t pre = std::chrono::system_clock::now();
   STATS.track("CheckpointPool::evict");
   TORCH_CHECK(aps.size() > 0);
@@ -197,9 +198,7 @@ void CheckpointPool::evict() {
       }
     }
   }
-  if (evict_idx == -1) {
-    TORCH_CHECK(shrunk);
-  } else {
+  if (evict_idx != -1) {
     auto evict_from_idx = [&](size_t idx) {
                             auto ap_strong = aps[idx].lock();
                             TORCH_CHECK(ap_strong.defined());
@@ -210,6 +209,7 @@ void CheckpointPool::evict() {
   }
   time_t post = std::chrono::system_clock::now();
   search_time_ += (post - pre).count();
+  return shrunk;
 }
 
 CheckpointPool::CheckpointPool() { }

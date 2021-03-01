@@ -25,6 +25,14 @@ C10_DEFINE_REGISTRY(FreeCudaMemoryCallbacksRegistry, FreeMemoryCallback);
 namespace cuda {
 namespace CUDACachingAllocator {
 
+bool (*eviction_callback)() = nullptr;
+void register_eviction(bool (*callback)()) {
+  eviction_callback = callback;
+}
+
+bool try_eviction() {
+  return eviction_callback && eviction_callback();
+}
 //
 // Yet another caching allocator for CUDA device allocations.
 //
@@ -232,15 +240,25 @@ class DeviceCachingAllocator {
     params.stat_types[static_cast<size_t>(StatType::AGGREGATE)] = true;
     params.stat_types[static_cast<size_t>(get_stat_type_for_pool(pool))] = true;
 
-    bool block_found =
-      // Search pool
-      get_free_block(params)
-      // Trigger callbacks and retry search
-      || (trigger_free_memory_callbacks(params) && get_free_block(params))
-      // Attempt allocate
-      || alloc_block(params, false)
-      // Free all non-split cached blocks and retry alloc.
-      || (free_cached_blocks() && alloc_block(params, true));
+    auto found_block =
+      [&](){
+        return
+          // Search pool
+          get_free_block(params)
+          // Trigger callbacks and retry search
+          || (trigger_free_memory_callbacks(params) && get_free_block(params))
+          // Attempt allocate
+          || alloc_block(params, false)
+          // Free all non-split cached blocks and retry alloc.
+          || (free_cached_blocks() && alloc_block(params, true));
+      };
+    bool block_found = found_block();
+    bool eviction_progress = true;
+
+    while (!(block_found || !eviction_progress)) {
+      eviction_progress = try_eviction();
+      block_found = found_block();
+    }
 
     TORCH_INTERNAL_ASSERT((!block_found && params.err != cudaSuccess) || params.block);
     if (!block_found) {
