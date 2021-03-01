@@ -577,10 +577,12 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
   Tensors raw_outputs;
  loop:
   try {
-  raw_outputs = remat_f(raw_inputs);
+    raw_outputs = remat_f(raw_inputs);
   } catch (const c10::Error& e) {
+    std::cout << "error possibly due to OOM... trying to evict." << std::endl;
     bool b = pool.evict();
     if (!b) {
+      std::cout << "eviction failed. rethrowing error..." << std::endl;
       throw e;
     } else {
       goto loop;
