@@ -212,7 +212,17 @@ bool CheckpointPool::evict() {
   return shrunk;
 }
 
-CheckpointPool::CheckpointPool() { }
+duration_t malloc_evict_time_ = duration_t::zero();
+bool malloc_evict() {
+  time_t pre = std::chrono::system_clock::now();
+  auto ret = pool.evict();
+  time_t post = std::chrono::system_clock::now();
+  malloc_evict_time_ += post - pre;
+  return ret;
+}
+
+CheckpointPool::CheckpointPool() {
+}
 
 struct CheckpointFunctionsImpl: CheckpointFunctions {
   void new_log(std::string str) override {
@@ -561,14 +571,16 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
   }
   Tensors raw_inputs = uncheckpoint(inputs);
   time_t pre = std::chrono::system_clock::now();
+  malloc_evict_time_ = duration_t::zero();
   auto raw_outputs = remat_f(raw_inputs);
   time_t post = std::chrono::system_clock::now();
   pool.auto_evict();
-  base_compute_time_ += (post - pre).count();
+  auto compute_time = post - pre - malloc_evict_time_;
+  base_compute_time_ += compute_time.count();
   std::vector<intrusive_ptr<External>> outputs;
   std::vector<int> aliases;
   weaks weak_outputs;
-  auto remat = intrusive_ptr<Rematerializer>::make(Unsafe(), remat_f, inputs, post - pre);
+  auto remat = intrusive_ptr<Rematerializer>::make(Unsafe(), remat_f, inputs, compute_time);
 
   for (const Tensor& t : raw_outputs) {
     intrusive_ptr<AliasPool> alias_pool;
