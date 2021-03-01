@@ -574,8 +574,8 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
   Tensors raw_inputs = uncheckpoint(inputs);
   time_t pre = std::chrono::system_clock::now();
   malloc_evict_time_ = duration_t::zero();
-  Tensors raw_outputs = remat_f(raw_inputs);
-  /* loop:
+  Tensors raw_outputs;
+ loop:
   try {
   raw_outputs = remat_f(raw_inputs);
   } catch (const c10::Error& e) {
@@ -585,7 +585,7 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
     } else {
       goto loop;
     }
-    }*/
+  }
   time_t post = std::chrono::system_clock::now();
   pool.auto_evict();
   auto compute_time = post - pre - malloc_evict_time_;
