@@ -74,6 +74,9 @@ const char* toString(DispatchKey t) {
     case DispatchKey::Meta:
       return "Meta";
 
+    case DispatchKey::Checkpoint:
+      return "Checkpoint";
+
     case DispatchKey::Autograd:
       return "Autograd";
     case DispatchKey::AutogradCPU:
