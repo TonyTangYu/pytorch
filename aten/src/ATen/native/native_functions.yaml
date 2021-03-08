@@ -1,5 +1,30 @@
 # See README.md in this directory for more guidance
 
+# convert a tensor to a checkpoint tensor.
+# if the input is already a checkpoint tensor,
+# checkpoint will fail while try_checkpoint will
+# simply return the input.
+- func: checkpoint(Tensor self) -> Tensor
+  variants: method
+
+- func: try_checkpoint(Tensor self) -> Tensor
+  variants: method
+
+- func: is_checkpoint(Tensor self) -> bool
+  variants: method
+
+# convert checkpointed tensor into normal tensor.
+# uncheckpoint assume the input is checkpointed and will fail otherwise.
+# decheckpoint return the input if it is not checkpointed.
+- func: uncheckpoint(Tensor self) -> Tensor
+  variants: method
+
+- func: decheckpoint(Tensor self) -> Tensor
+  variants: method
+
+- func: pin(Tensor(a!) self) -> ()
+  variants: method
+
 # *********NB: _cast_* operators are DEPRECATED and will be removed
 # eventually. These were previously used before TorchScript IR supported
 # representing ScalarType's. They are now superseded by usage of
