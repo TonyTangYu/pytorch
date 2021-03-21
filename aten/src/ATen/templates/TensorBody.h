@@ -343,6 +343,11 @@ class TORCH_API Tensor {
     return impl_->device();
   }
 
+  /// Returns a `Tensor`'s device.
+  inline c10::optional<Device> optional_device() const {
+    return impl_->optional_device();
+  }
+
   /// Returns a `Tensor`'s device index.
   int64_t get_device() const;
 
