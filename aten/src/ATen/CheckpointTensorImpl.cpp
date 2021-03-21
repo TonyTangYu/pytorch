@@ -31,11 +31,11 @@ void pin(Tensor& t) {
 }
 
 Tensor decheckpoint(const Tensor& t) {
-  throw;
+  return is_checkpoint(t) ? uncheckpoint(t) : t;
 }
 
 bool is_checkpoint(const Tensor& t) {
-  throw;
+  return get_cpti(t) != nullptr;
 }
 
 
@@ -45,6 +45,9 @@ Tensor try_checkpoint(const Tensor& t) {
 
 }
 
+// note: please be deterministic (same input give same output/same mutation on input no matter how many time it is called).
+// if it is not deterministic, at least dont change the shape of the output (if input shape not changed).
+// otherwise the code will break.
 void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack) {
   std::cout << "inside fallback" << std::endl;
   std::cout << op.operator_name() << std::endl;
@@ -57,11 +60,20 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
   for (size_t i = 0; i < num_arg; ++i) {
     reversed_in.push_back(torch::jit::pop(stack));
   }
+
   // rematerializer: grab the reversed_in, uncheckpoint and push all of them onto the stack,
   // grab the output arguments from the stack and push them into reversed_out,
   // then walk through all the tensor to update a list of receivers.
-  auto ivalue_uncheckpoint() = [](){};
-  auto ivalue_checkpoint() = [](){};
+
+  // as we are initializing, we need to do extra job.
+  // in particular, we will save a vector of children in the rematerializer,
+  // so when rematerializing, we can plug the value back in.
+  // a vector of parents are also saved for fast parent access which is needed for eviction cost evaluation.
+
+  // traverse all the ivalue but map all the tensor inside.
+  auto traverse_ivalue = [](){};
+  auto ivalue_uncheckpoint = [](){};
+  auto ivalue_checkpoint = [](){};
   for (size_t i = 0; i < num_ret; ++i) {
     reversed_out.push_back(torch::jit::pop(stack));
   }
