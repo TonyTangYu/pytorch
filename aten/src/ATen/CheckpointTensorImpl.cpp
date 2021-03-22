@@ -17,6 +17,7 @@ CheckpointTensorImpl* must_get_cpti(const Tensor& t) {
 namespace native {
 
 Tensor checkpoint(const Tensor& t) {
+  TORCH_CHECK(!is_checkpoint(t));
   auto cpti = intrusive_ptr<CheckpointTensorImpl>::make(t);
   return Tensor(cpti);
 }
@@ -30,19 +31,35 @@ void pin(Tensor& t) {
   throw;
 }
 
-Tensor decheckpoint(const Tensor& t) {
+Tensor try_uncheckpoint(const Tensor& t) {
   return is_checkpoint(t) ? uncheckpoint(t) : t;
+}
+
+Tensor decheckpoint(const Tensor& t) {
+  return try_uncheckpoint(t);
 }
 
 bool is_checkpoint(const Tensor& t) {
   return get_cpti(t) != nullptr;
 }
 
-
 Tensor try_checkpoint(const Tensor& t) {
-  throw;
+  return is_checkpoint(t) ? t : checkpoint(t);
 }
 
+}
+
+// map over the tensor in the ivalue.
+template<typename F>
+IValue map_ivalue(const F& f, const IValue& iv) {
+  if (iv.isTensor()) {
+    return f(iv.toTensor());
+  } else if (iv.isScalar()) {
+    return iv;
+  } else {
+    TORCH_CHECK(false, "unknown ivalue type: ", *(iv.type()));
+    throw;
+  }
 }
 
 // note: please be deterministic (same input give same output/same mutation on input no matter how many time it is called).
@@ -52,14 +69,29 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
   std::cout << "inside fallback" << std::endl;
   std::cout << op.operator_name() << std::endl;
   auto s = op.schema();
+  std::cout << s << std::endl;
   size_t num_arg = s.arguments().size(), num_ret = s.returns().size();
   std::cout << num_arg << std::endl;
   std::cout << num_ret << std::endl;
   TORCH_CHECK(!s.is_mutable()); // todo: deal with mutability. s.hasAnyAliasInfo() might be useful.
   std::vector<IValue> reversed_in, reversed_out; // popping them from the jit stack and pushing them back will reverse stuff.
+
   for (size_t i = 0; i < num_arg; ++i) {
     reversed_in.push_back(torch::jit::pop(stack));
   }
+  for (auto it = reversed_in.rbegin(); it != reversed_in.rend(); ++it) {
+    torch::jit::push(stack, map_ivalue(native::decheckpoint, *it));
+  }
+
+  op.callBoxed(stack);
+
+  for (size_t i = 0; i < num_ret; ++i) {
+    reversed_out.push_back(torch::jit::pop(stack));
+  }
+  for (auto it = reversed_out.rbegin(); it != reversed_out.rend(); ++it) {
+    torch::jit::push(stack, map_ivalue(native::checkpoint, *it));
+  }
+  return;
 
   // rematerializer: grab the reversed_in, uncheckpoint and push all of them onto the stack,
   // grab the output arguments from the stack and push them into reversed_out,
@@ -71,12 +103,6 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
   // a vector of parents are also saved for fast parent access which is needed for eviction cost evaluation.
 
   // traverse all the ivalue but map all the tensor inside.
-  auto traverse_ivalue = [](){};
-  auto ivalue_uncheckpoint = [](){};
-  auto ivalue_checkpoint = [](){};
-  for (size_t i = 0; i < num_ret; ++i) {
-    reversed_out.push_back(torch::jit::pop(stack));
-  }
   op.callBoxed(stack);
 }
 
