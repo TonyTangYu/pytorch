@@ -71,23 +71,30 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
   auto s = op.schema();
   std::cout << s << std::endl;
   size_t num_arg = s.arguments().size(), num_ret = s.returns().size();
-  std::cout << num_arg << std::endl;
-  std::cout << num_ret << std::endl;
   TORCH_CHECK(!s.is_mutable()); // todo: deal with mutability. s.hasAnyAliasInfo() might be useful.
-  std::vector<IValue> reversed_in, reversed_out; // popping them from the jit stack and pushing them back will reverse stuff.
+  std::vector<IValue> reversed_in; // popping them from the jit stack and pushing them back will reverse stuff.
 
   for (size_t i = 0; i < num_arg; ++i) {
     reversed_in.push_back(torch::jit::pop(stack));
   }
-  for (auto it = reversed_in.rbegin(); it != reversed_in.rend(); ++it) {
-    torch::jit::push(stack, map_ivalue(native::decheckpoint, *it));
-  }
+  // todo: is it safe to save a torch::jit::stack*?
+  // todo: modify on heap instead of pushing and popping?
+  auto call = [=](){
+                for (auto it = reversed_in.rbegin(); it != reversed_in.rend(); ++it) {
+                  torch::jit::push(stack, map_ivalue(native::decheckpoint, *it));
+                }
 
-  op.callBoxed(stack);
+                op.callBoxed(stack);
 
-  for (size_t i = 0; i < num_ret; ++i) {
-    reversed_out.push_back(torch::jit::pop(stack));
-  }
+                std::vector<IValue> reversed_out;
+                for (size_t i = 0; i < num_ret; ++i) {
+                  reversed_out.push_back(torch::jit::pop(stack));
+                }
+                return reversed_out;
+              };
+
+  auto reversed_out = call();
+
   for (auto it = reversed_out.rbegin(); it != reversed_out.rend(); ++it) {
     torch::jit::push(stack, map_ivalue(native::checkpoint, *it));
   }
@@ -103,7 +110,6 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
   // a vector of parents are also saved for fast parent access which is needed for eviction cost evaluation.
 
   // traverse all the ivalue but map all the tensor inside.
-  op.callBoxed(stack);
 }
 
 // todo: i can also use a torch library impl instead of calling fallback explicitly. should i do that?
