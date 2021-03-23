@@ -4,6 +4,14 @@
 
 namespace at {
 
+DispatchKeySet convert_key_set(const DispatchKeySet& t) {
+  CHECK(!t.has(DispatchKey::Checkpoint));
+  auto ret = t.add(DispatchKey::Checkpoint);
+  return ret;
+}
+
+CheckpointTensorImpl::CheckpointTensorImpl(const Tensor& t) :  TensorImpl(convert_key_set(t.key_set()), t.dtype(), t.optional_device()), t(t) { }
+
 CheckpointTensorImpl* get_cpti(const Tensor& t) {
   return dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
 }
@@ -73,28 +81,27 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
   size_t num_arg = s.arguments().size(), num_ret = s.returns().size();
   TORCH_CHECK(!s.is_mutable()); // todo: deal with mutability. s.hasAnyAliasInfo() might be useful.
   std::vector<IValue> reversed_in; // popping them from the jit stack and pushing them back will reverse stuff.
-
+  // but should we really reverse stuff? there is a peek() function which doesnt.
+  // ezyang seems to want to replace stack impl from std::vector to some sort of array,
+  // so slower peek() though.
   for (size_t i = 0; i < num_arg; ++i) {
     reversed_in.push_back(torch::jit::pop(stack));
   }
   // todo: is it safe to save a torch::jit::stack*?
   // todo: modify on heap instead of pushing and popping?
-  auto call = [=](){
-                for (auto it = reversed_in.rbegin(); it != reversed_in.rend(); ++it) {
-                  torch::jit::push(stack, map_ivalue(native::decheckpoint, *it));
-                }
-
-                op.callBoxed(stack);
-
-                std::vector<IValue> reversed_out;
-                for (size_t i = 0; i < num_ret; ++i) {
-                  reversed_out.push_back(torch::jit::pop(stack));
-                }
-                return reversed_out;
-              };
-
+  auto call =
+    [=](){
+      for (auto it = reversed_in.rbegin(); it != reversed_in.rend(); ++it) {
+        torch::jit::push(stack, map_ivalue(native::decheckpoint, *it));
+      }
+      op.callBoxed(stack);
+      std::vector<IValue> reversed_out;
+      for (size_t i = 0; i < num_ret; ++i) {
+        reversed_out.push_back(torch::jit::pop(stack));
+      }
+      return reversed_out;
+    };
   auto reversed_out = call();
-
   for (auto it = reversed_out.rbegin(); it != reversed_out.rend(); ++it) {
     torch::jit::push(stack, map_ivalue(native::checkpoint, *it));
   }
