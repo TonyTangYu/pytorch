@@ -56,8 +56,8 @@
 
 // Optimization:
 // We treat tensor that has no external reference differently -
-// They will never be externally used again so we assume their next use time is infinite
-// so, if it doesnt has any evicted neighbor it will get evicted immediately.
+// When all external reference to a Checkpoint Tensor is lost,
+// we will try to immediately evict it.
 
 // Note: to code fast I do not use RAII and just assume the code will not try to recover from exception.
 // It should be easy to fix though.
