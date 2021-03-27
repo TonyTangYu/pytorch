@@ -1,5 +1,7 @@
 #pragma once
 
+#include <random>
+
 #include <c10/core/TensorImpl.h>
 #include <ATen/Tensor.h>
 #include <ATen/ATen.h>
@@ -338,6 +340,49 @@ struct CheckpointTensorCell : intrusive_ptr_target {
     pool.reset();
     remat.reset();
   }
+};
+
+// An external reference.
+// Each strong will have at most one external reference.
+// By keeping such an invariant, whenever an external reference die,
+// We know that the underlying strong is only used internally.
+// Thus, when it die we can apply optimization like banishing/infinite staleness.
+// We keep this invariant by only allowing CheckpointTensorImpl to make new External,
+// When new CheckpointTensorImpl is constructed.
+struct External : intrusive_ptr_target {
+  External(const strong& value) : value(value) {
+    value->pool->register_external();
+  }
+  External(const Tensor& value) :
+    External(strong::make(value,
+                          intrusive_ptr<AliasPool>::make(Unsafe(),
+                                                         intrusive_ptr<Rematerializer>(),
+                                                         memory(value)))) { }
+  External(const Tensor& value,
+           const intrusive_ptr<AliasPool>& pool,
+           const intrusive_ptr<Rematerializer>& remat) :
+    External(strong::make(value, pool, remat)) { }
+  strong value;
+  void release_resources() override;
+};
+
+// CheckpointPool keep a list of AliasPool, and search over them to choose the best one to evict.
+struct CheckpointPool {
+  std::vector<weak_intrusive_ptr<AliasPool>> aps;
+  std::vector<weak_intrusive_ptr<External>> exts;
+  std::random_device rd;
+  std::mt19937 gen = std::mt19937(rd());
+  // whether to take a square-root sample of the pool during an eviction loop
+  bool sample_tensors = true;
+  // ignore tensors < 1% of the average tensor size
+  bool ignore_small_tensors = true;
+  bool has_memory_budget = false;
+  long memory_budget;
+  void evict();
+  void auto_evict();
+  void clear_checkpointpool();
+  void add(const intrusive_ptr<AliasPool>&);
+  CheckpointPool();
 };
 
 }
