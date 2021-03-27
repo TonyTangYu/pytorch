@@ -5,7 +5,7 @@
 namespace at {
 
 DispatchKeySet convert_key_set(const DispatchKeySet& t) {
-  CHECK(!t.has(DispatchKey::Checkpoint));
+  TORCH_CHECK(!t.has(DispatchKey::Checkpoint));
   auto ret = t.add(DispatchKey::Checkpoint);
   return ret;
 }

@@ -3,6 +3,7 @@
 #include <c10/core/TensorImpl.h>
 #include <ATen/Tensor.h>
 #include <ATen/ATen.h>
+#include <Logger.h>
 
 // [System Description]:
 // Every Tensor is managed by a CheckpointTensor,
@@ -122,6 +123,221 @@ size_t memory(const Tensor& t);
 struct TORCH_API CheckpointTensorImpl : TensorImpl {
   Tensor t;
   CheckpointTensorImpl(const Tensor& t);
+};
+
+template<typename T>
+struct RefCell final : intrusive_ptr_target {
+  mutable T value;
+  void release_resources() final {
+    static_release_resources(value);
+  }
+  RefCell(const T& t) : value(t) { }
+};
+
+template<typename T>
+using Ref = intrusive_ptr<RefCell<T>>;
+
+template<typename T>
+void static_release_resources(intrusive_ptr<T>& ptr) {
+  ptr.reset();
+}
+
+class CheckpointTensorCell;
+using strong = intrusive_ptr<CheckpointTensorCell>;
+using strongs = std::vector<strong>;
+using weak = weak_intrusive_ptr<CheckpointTensorCell>;
+using weaks = std::vector<weak>;
+using Tensors = std::vector<Tensor>;
+// do we really need this? can we just use operatorhandle?
+// after some thoght i think we shouldnt be that coupled.
+using rematerialize_function_t = std::function<Tensors(const Tensors&)>;
+// this doesnt look right. a mutate function can also return input.
+// i guess mutate_function simply is not as fundamental as rematerialize_function.
+// the former desugar to the latter.
+// using mutate_function_t = std::function<void(const Tensors&)>;
+
+using time_t = std::chrono::time_point<std::chrono::system_clock>;
+using duration_t = std::chrono::system_clock::duration;
+struct CheckpointInfo {
+  duration_t compute_cost;
+  double cost(size_t memory, size_t staleness) const {
+    TORCH_CHECK(memory > 0);
+    TORCH_CHECK(staleness > 0);
+    return compute_cost.count() / static_cast<double>(memory * staleness);
+  }
+  CheckpointInfo(duration_t compute_cost) :
+    compute_cost(compute_cost) {
+  }
+};
+
+// ecn represent a evicted tensor group.
+// it is a set of tensor that are evicted, and if two evicted tensor are input -> output to each other,
+// they must be in an ecn.
+// note: we try to support removal from ecn by subtracting compute_cost and memory.
+// this will create suprious connection but that should be fine empircally.
+// below is an example of a suprious connection:
+// a -> b, a -> c
+// a, b, c got evicted so belong to a single ecn.
+// a got rematerialized.
+// b, c still belong to a single ecn although there is no connection.
+using ecn_ptr = intrusive_ptr<EquivalentClassNode<CheckpointInfo>>;
+
+struct Unsafe { };
+
+// The rematerializer could be called to reinvoke an operator.
+// Tensor point to remat which point to Tensor.
+// To build the cycle remat support a default constructor,
+// And allow you to fill in the member later.
+struct Rematerializer : intrusive_ptr_target {
+  rematerialize_function_t func;
+  strongs inputs;
+  weaks outputs;
+  duration_t compute_cost;
+  // when some output in here get evicted, they should belong to this ecn.
+  // a rematerializer have to track this,
+  // because when multiple output of a rematerializer get evicted,
+  // we only want to count the compute cost once.
+  ecn_ptr ecn;
+  Rematerializer(const Unsafe&,
+                 const rematerialize_function_t& func,
+                 const strongs& inputs,
+                 duration_t compute_cost)  :
+    func(func),
+    inputs(inputs),
+    compute_cost(compute_cost) {
+  }
+  void release_resources() final {
+    func = rematerialize_function_t();
+    inputs.clear();
+    outputs.clear();
+  }
+  void remat();
+  ecn_ptr get_ecn();
+  CheckpointInfo get_cpi();
+};
+
+// Track all Tensor that share the same Storage.
+// This is the atomic level of eviction - when evicting, everything here will get evicted.
+// When an AliasPool is evicted, the Storage of the underlying tensor must be freed.
+// Additionally, the AliasPool contain weak pointer to all children of tensors,
+// in order to compute the score of evicting a Storage.
+struct AliasPool : intrusive_ptr_target {
+  weaks tensors;
+  weaks neighbors;
+  std::set<ecn_ptr> neighbor_ecn();
+  // get() might hold some raw Tensor, rendering them unevictable.
+  // it is likely that get() will run out of memory, and when it does so, it will try to evict.
+  // so, it is crucial that we dont try to evict those tensors - doing so will not evict anything.
+  // lock_count count how many time a tensor is referenced by get.
+  size_t lock_count = 0;
+  size_t external_count = 0;
+  void lock() {
+    ++lock_count;
+  }
+  void unlock() {
+    TORCH_CHECK(lock_count > 0);
+    --lock_count;
+  }
+  intrusive_ptr<Rematerializer> head_remat;
+  size_t memory;
+  time_t last_used_time;
+  // An aliaspool cant register itself to the checkpointpool - you have to do it yourself.
+  AliasPool(const Unsafe&, intrusive_ptr<Rematerializer> head_remat, size_t memory) :
+    head_remat(head_remat),
+    memory(memory),
+    last_used_time(std::chrono::system_clock::now()) {
+  }
+  // hold the evicted tensor group if it is evicted.
+  // is empty if it is not evicted
+  ecn_ptr ecn;
+  double cost(time_t current_time);
+  bool evictable() const {
+    return lock_count == 0 && head_remat && !ecn;
+  }
+  void evict();
+  void register_external() {
+    ++external_count;
+  }
+  void release_external() {
+    TORCH_CHECK(external_count > 0);
+    --external_count;
+    if (external_count == 0 && evictable()) {
+      evict();
+    }
+  }
+  // if it was evicted, refresh it. otherwise do nothing.
+  // have to check so, because when we rematerialize a single tensor in an aliaspool,
+  // we will set it to non-evicted, and when we rematerialize it's tensor they will also reset this.
+  void set_not_evicted(const intrusive_ptr<AliasPool>& self);
+  void release_resources() final {
+    tensors.clear();
+    neighbors.clear();
+    head_remat.reset();
+  }
+};
+
+struct CheckpointTensorCell : intrusive_ptr_target {
+  std::unique_ptr<Tensor> t;
+  bool defined = false;
+  bool is_undefined_tensor;
+  DispatchKeySet key_set_;
+  DispatchKeySet key_set() const {
+    TORCH_CHECK(defined);
+    return key_set_;
+  }
+  caffe2::TypeMeta dtype_;
+  caffe2::TypeMeta dtype() const {
+    TORCH_CHECK(defined);
+    return dtype_;
+  }
+  c10::optional<Device> optional_device_;
+  c10::optional<Device> optional_device() const {
+    TORCH_CHECK(defined);
+    return optional_device_;
+  }
+  // A Tensor is evictable iff it's AliasPool is evictable.
+  // A evictable tensor must have Rematerializer.
+  intrusive_ptr<AliasPool> pool;
+  intrusive_ptr<Rematerializer> remat;
+  void evict() {
+    TORCH_CHECK(remat);
+    t.reset();
+  }
+  void fill(const Tensor& t);
+  explicit CheckpointTensorCell(const Tensor& t, const intrusive_ptr<AliasPool>& pool) : pool(pool) {
+    fill(t);
+  }
+  explicit CheckpointTensorCell(const Tensor& t,
+                                const intrusive_ptr<AliasPool>& pool,
+                                const intrusive_ptr<Rematerializer>& remat) :
+    pool(pool), remat(remat) {
+    fill(t);
+  }
+  size_t memory() {
+    TORCH_CHECK(defined);
+    return pool->memory;
+  }
+  Tensor get() {
+    if (! t) {
+      TORCH_CHECK(remat);
+      remat->remat();
+    }
+    TORCH_CHECK(t);
+    TORCH_CHECK(! t->key_set().has(DispatchKey::Checkpoint));
+    TORCH_CHECK(! t->key_set().has(DispatchKey::Autograd));
+    pool->last_used_time = std::chrono::system_clock::now();
+    return *t;
+  }
+  void pin() {
+    get();
+    pool->head_remat.reset();
+    remat.reset();
+  }
+  void release_resources() final {
+    t.reset();
+    pool.reset();
+    remat.reset();
+  }
 };
 
 }
