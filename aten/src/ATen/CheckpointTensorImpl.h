@@ -5,7 +5,7 @@
 #include <c10/core/TensorImpl.h>
 #include <ATen/Tensor.h>
 #include <ATen/ATen.h>
-#include <Logger.h>
+#include <ATen/Logger.h>
 
 // [System Description]:
 // Every Tensor is managed by a CheckpointTensor,
@@ -121,11 +121,6 @@ intrusive_ptr<EquivalentClassNode<T>> merge(const std::function<T(const T&, cons
 }
 
 size_t memory(const Tensor& t);
-
-struct TORCH_API CheckpointTensorImpl : TensorImpl {
-  Tensor t;
-  CheckpointTensorImpl(const Tensor& t);
-};
 
 template<typename T>
 struct RefCell final : intrusive_ptr_target {
@@ -330,6 +325,10 @@ struct CheckpointTensorCell : intrusive_ptr_target {
     pool->last_used_time = std::chrono::system_clock::now();
     return *t;
   }
+  // pin() make a cell unevictable.
+  // This allow us to deallocate the rematerializer,
+  // and potentially tensors that are only used by the rematerializer.
+  // todo: pin() in the paper mean lock(). find better name?
   void pin() {
     get();
     pool->head_remat.reset();
@@ -366,7 +365,64 @@ struct External : intrusive_ptr_target {
   void release_resources() override;
 };
 
-// CheckpointPool keep a list of AliasPool, and search over them to choose the best one to evict.
+struct TORCH_API CheckpointTensorImpl : TensorImpl {
+  int id = gen_counter();
+  static int counter;
+  static int gen_counter() {
+    return counter++;
+  }
+  std::string counter_name() const {
+    return std::string("x") + std::to_string(id);
+  }
+
+  Ref<intrusive_ptr<External>> ref;
+
+  void release_resources() final;
+
+  explicit CheckpointTensorImpl(const Ref<intrusive_ptr<External>>& ref);
+
+  explicit CheckpointTensorImpl(const intrusive_ptr<External>& e) :
+    CheckpointTensorImpl(Ref<intrusive_ptr<External>>::make(e)) { }
+
+  explicit CheckpointTensorImpl(const Tensor& t);
+
+  Tensor get() const;
+
+  static Tensors make(const std::string& name,
+                      const rematerialize_function_t& remat,
+                      const Tensors& inputs);
+
+  intrusive_ptr<TensorImpl> shallow_copy_and_detach(const VariableVersion& version_counter,
+                                                    bool allow_tensor_metadata_change) const override;
+
+  void shallow_copy_from(const c10::intrusive_ptr<TensorImpl>& impl) override;
+
+  int64_t dim() const override {
+    return ref->value->value->get().dim();
+  }
+  int64_t numel() const override {
+    return ref->value->value->get().numel();
+  }
+  IntArrayRef sizes() const override {
+    return ref->value->value->get().sizes();
+  }
+  int64_t size(int64_t d) const override {
+    return ref->value->value->get().size(d);
+  }
+  IntArrayRef strides() const override {
+    return ref->value->value->get().strides();
+  }
+  int64_t stride(int64_t d) const override {
+    return ref->value->value->get().stride(d);
+  }
+  bool has_storage() const override {
+    return false;
+  }
+};
+
+// CheckpointPool:
+// Keep a list of AliasPool, and search over them to choose the best one to evict.
+// Keep a list of External reference, 
 struct CheckpointPool {
   std::vector<weak_intrusive_ptr<AliasPool>> aps;
   std::vector<weak_intrusive_ptr<External>> exts;

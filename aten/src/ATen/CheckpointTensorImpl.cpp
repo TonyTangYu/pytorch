@@ -1,8 +1,13 @@
 #include <ATen/CheckpointTensorImpl.h>
 #include <ATen/core/op_registration/op_registration.h>
 #include <ATen/core/dispatch/Dispatcher.h>
+#include <c10/cuda/CUDACachingAllocator.h>
 
 namespace at {
+
+using Clock = std::chrono::high_resolution_clock;
+using Time = Clock::time_point;
+using Duration = Clock::duration;
 
 DispatchKeySet convert_key_set(const DispatchKeySet& t) {
   TORCH_CHECK(!t.has(DispatchKey::Checkpoint));
@@ -10,7 +15,10 @@ DispatchKeySet convert_key_set(const DispatchKeySet& t) {
   return ret;
 }
 
-CheckpointTensorImpl::CheckpointTensorImpl(const Tensor& t) :  TensorImpl(convert_key_set(t.key_set()), t.dtype(), t.optional_device()), t(t) { }
+void External::release_resources() {
+  value->pool->release_external();
+  value.reset();
+}
 
 CheckpointTensorImpl* get_cpti(const Tensor& t) {
   return dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
@@ -22,21 +30,132 @@ CheckpointTensorImpl* must_get_cpti(const Tensor& t) {
   return ret;
 }
 
+size_t memory_sum = 0;
+size_t memory_max = 0;
+size_t memory_count = 0;
+
+void reset_memory_stat() {
+  memory_sum = 0;
+  memory_max = 0;
+  memory_count = 0;
+}
+
+// todo: use defensive programming to make this only pass on dense tensor.
+// todo: rn this track memory from all device. but if we are cpointing on gpu, we dont care about cpu.
+size_t memory(const Tensor& t) {
+  if (! t.has_storage()) {
+    return 0;
+  }
+  auto& storage = t.storage();
+  size_t res = storage.nbytes();
+  memory_sum += res;
+  memory_max = std::max(memory_max, res);
+  memory_count += 1;
+  return res;
+}
+
+// todo: generalize this to other device? e.g. we might want checkpointing on pure cpu.
+long current_memory() {
+  auto device_stat = c10::cuda::CUDACachingAllocator::getDeviceStats(0);
+  return device_stat.allocated_bytes[0].current;
+}
+
+void CheckpointPool::auto_evict() {
+  if (has_memory_budget) {
+    while (current_memory() > memory_budget) {
+      evict();
+    }
+  }
+}
+
+bool use_log_ = false;
+bool use_profile_ = false;
+long base_compute_time_ = 0;
+long remat_compute_time_ = 0;
+long search_time_ = 0;
+long cost_time_ = 0;
+
+CheckpointPool pool;
+void CheckpointPool::add(const intrusive_ptr<AliasPool>& p) {
+  if (p->memory > 0 && (memory_count == 0 || !ignore_small_tensors || p->memory >= 0.01 * double(memory_sum/memory_count))) {
+    aps.push_back(weak_intrusive_ptr<AliasPool>(p));
+  }
+}
+
+CheckpointTensorImpl::CheckpointTensorImpl(const Tensor& t) : CheckpointTensorImpl(intrusive_ptr<External>::make(t)) { }
+
+CheckpointTensorImpl::CheckpointTensorImpl(const Ref<intrusive_ptr<External>>& ref) :
+  TensorImpl(convert_key_set(ref->value->value->key_set()),
+             ref->value->value->dtype(),
+             ref->value->value->optional_device()),
+  ref(ref) {
+  if (key_set().has(DispatchKey::Autograd)) {
+    set_requires_grad(true);
+  }
+}
+
+intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const VariableVersion& version_counter,
+                                                                        bool allow_tensor_metadata_change) const {
+  auto ret = intrusive_ptr<CheckpointTensorImpl>::make(ref);
+  if (use_log_) {
+    DTRLogCopy(ret->counter_name(), counter_name());
+  }
+  return ret;
+}
+
+void CheckpointTensorImpl::shallow_copy_from(const c10::intrusive_ptr<TensorImpl>& impl) {
+  TORCH_CHECK(impl->key_set().has(DispatchKey::Checkpoint));
+  auto* cpti = dynamic_cast<CheckpointTensorImpl*>(impl.get());
+  TORCH_CHECK(cpti != nullptr);
+  ref->value = cpti->ref->value;
+  if (use_log_) {
+    DTRLogCopyFrom(counter_name(), cpti->counter_name());
+  }
+}
+
+int CheckpointTensorImpl::counter = 0;
+
+bool is_alias(const Tensor& l, const Tensor& r) {
+  return l.defined() && r.defined() && l.is_alias_of(r);
+}
+
+// return an index for alias.
+// we dont care which one because they all lead to the same alias pool.
+// return -1 for no alias.
+// may god forgive my sin.
+int get_alias(const Tensors& ts, const Tensor& t) {
+  if (t.defined()) {
+    for (size_t i = 0; i < ts.size(); ++i) {
+      if (ts[i].defined() && t.is_alias_of(ts[i])) {
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+
+void CheckpointTensorImpl::release_resources() {
+  if (use_log_) {
+    DTRLogRelease(counter_name());
+  }
+  ref.reset();
+}
+
 namespace native {
 
 Tensor checkpoint(const Tensor& t) {
   TORCH_CHECK(!is_checkpoint(t));
   auto cpti = intrusive_ptr<CheckpointTensorImpl>::make(t);
+  if (use_log_) {
+    DTRLogConstant(cpti->counter_name());
+    DTRLogMemory(cpti->counter_name(), cpti->ref->value->value->memory());
+  }
   return Tensor(cpti);
 }
 
 Tensor uncheckpoint(const Tensor& t) {
   auto cpti = must_get_cpti(t);
-  return cpti->t;
-}
-
-void pin(Tensor& t) {
-  throw;
+  return cpti->get();
 }
 
 Tensor try_uncheckpoint(const Tensor& t) {
@@ -47,6 +166,12 @@ Tensor decheckpoint(const Tensor& t) {
   return try_uncheckpoint(t);
 }
 
+void pin(Tensor& t) {
+  auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
+  TORCH_CHECK(cpti != nullptr);
+  cpti->ref->value->value->pin();
+}
+
 bool is_checkpoint(const Tensor& t) {
   return get_cpti(t) != nullptr;
 }
@@ -55,6 +180,91 @@ Tensor try_checkpoint(const Tensor& t) {
   return is_checkpoint(t) ? t : checkpoint(t);
 }
 
+void new_log(std::string str) {
+  DTRLogger::logger().out = std::ofstream(DTRLogger::logger().get_filename(str));
+}
+
+void annotate_log(std::string str) {
+  if (!use_log_) { return; }
+  if (log_json) {
+    json j;
+    j[INSTRUCTION] = "ANNOTATE";
+    j[ANNOTATION] = str;
+    DTRLogger::logger().log(j.dump());
+  } else {
+    DTRLogger::logger().log("# " + str);
+  }
+}
+
+void toggle_log(bool b) {
+  use_log_ = b;
+}
+
+// todo: make this a function of Checkpointpool
+// should we traverse all externals in chronological order or reverse chronological order?
+// my intuition tell me it should be reversed, because the reversed order prioritize the newer external,
+// which has tensor more near it unevicted (because of staleness).
+// if we go with chronological order, those tensors might be evicted.
+void clear_checkpointpool() {
+  while (!pool.exts.empty()) {
+    if (auto e = pool.exts.back().lock()) {
+      e->value->pin();
+    }
+    pool.exts.pop_back();
+  }
+}
+
+void unset_memory_budget() {
+  pool.has_memory_budget = false;
+}
+
+void set_memory_budget(long budget) {
+  pool.memory_budget = budget;
+  pool.has_memory_budget = true;
+}
+
+void toggle_sampling(bool sample) {
+  pool.sample_tensors = sample;
+}
+
+void toggle_ignore_small_tensors(bool ignore) {
+  pool.ignore_small_tensors = ignore;
+}
+
+void reset_profile() {
+  base_compute_time_ = 0;
+  remat_compute_time_ = 0;
+  search_time_ = 0;
+  cost_time_ = 0;
+}
+
+void toggle_profile(bool profile) {
+  use_profile_ = profile;
+}
+
+long remat_compute_time() {
+  return remat_compute_time_;
+}
+
+long base_compute_time() {
+  return base_compute_time_;
+}
+
+long compute_time() {
+  return base_compute_time() + remat_compute_time();
+}
+
+long cost_time() {
+  return cost_time_;
+}
+
+long search_time() {
+  return search_time_;
+}
+
+long loop_time() {
+  return search_time() - cost_time();
+}
 }
 
 // map over the tensor in the ivalue.
