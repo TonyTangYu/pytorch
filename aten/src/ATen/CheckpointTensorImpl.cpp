@@ -60,14 +60,6 @@ long current_memory() {
   return device_stat.allocated_bytes[0].current;
 }
 
-void CheckpointPool::auto_evict() {
-  if (has_memory_budget) {
-    while (current_memory() > memory_budget) {
-      evict();
-    }
-  }
-}
-
 bool use_log_ = false;
 bool use_profile_ = false;
 long base_compute_time_ = 0;
@@ -80,6 +72,209 @@ void CheckpointPool::add(const intrusive_ptr<AliasPool>& p) {
   if (p->memory > 0 && (memory_count == 0 || !ignore_small_tensors || p->memory >= 0.01 * double(memory_sum/memory_count))) {
     aps.push_back(weak_intrusive_ptr<AliasPool>(p));
   }
+}
+
+void CheckpointPool::auto_evict() {
+  if (has_memory_budget) {
+    while (current_memory() > memory_budget) {
+      evict();
+    }
+  }
+}
+
+void CheckpointPool::evict() {
+  time_t pre = std::chrono::system_clock::now();
+  TORCH_CHECK(aps.size() > 0);
+  // shrunk: either something has been evicted or the pools have gotten smaller
+  bool shrunk = false;
+  int evict_idx = -1;
+  double evict_cost = INFINITY;
+  time_t current_time = std::chrono::system_clock::now();
+  auto remove_from_aps = [&](size_t i) {
+                           aps[i] = aps[aps.size() - 1];
+                           aps.pop_back();
+                         };
+  std::uniform_int_distribution<> distrib(1, 1 * std::max(1, static_cast<int>(std::sqrt(aps.size()))));
+  // sampling a random independent subset of all evictable tensors to find the cheapest tensor to evict.
+  for (size_t i = 0; i < aps.size();) {
+    auto cannot_evict = [&]() {
+                          shrunk = true;
+                          remove_from_aps(i);
+                        };
+    auto ap_strong = aps[i].lock();
+    if (!ap_strong.defined()) {
+      cannot_evict();
+    }
+    else if (ap_strong->ecn) {
+      cannot_evict();
+    }
+    else {
+      if (ap_strong->evictable()) {
+        double cost = ap_strong->cost(current_time);
+        if (cost < evict_cost) {
+          evict_cost = cost;
+          evict_idx = i;
+        }
+      }
+
+      if (sample_tensors) {
+        i += distrib(gen);
+      } else {
+        i += 1;
+      }
+    }
+  }
+  if (evict_idx == -1) {
+    TORCH_CHECK(shrunk);
+  } else {
+    auto evict_from_idx = [&](size_t idx) {
+                            auto ap_strong = aps[idx].lock();
+                            TORCH_CHECK(ap_strong.defined());
+                            ap_strong->evict();
+                            remove_from_aps(evict_idx);
+                          };
+    evict_from_idx(evict_idx);
+  }
+  time_t post = std::chrono::system_clock::now();
+  search_time_ += (post - pre).count();
+}
+
+Tensor uncheckpoint(const strong& input) {
+  return input->get();
+}
+
+Tensors uncheckpoint(const strongs& inputs) {
+  Tensors ret;
+  ret.reserve(inputs.size());
+  for (const strong& input : inputs) {
+    ret.push_back(uncheckpoint(input));
+  }
+  return ret;
+};
+
+Tensors try_checkpoint(const Tensors& inputs) {
+  Tensors ret;
+  ret.reserve(inputs.size());
+  for (const Tensor& input : inputs) {
+    ret.push_back(at::native::try_checkpoint(input));
+  }
+  return ret;
+}
+
+void Rematerializer::remat() {
+  // TODO: refactor using RAII for exception safety.
+  for (const strong& s : inputs) {
+    s->pool->lock();
+  }
+  Tensors ts = uncheckpoint(inputs);
+  time_t pre = std::chrono::system_clock::now();
+  auto ret = func(ts);
+  time_t post = std::chrono::system_clock::now();
+  pool.auto_evict();
+  remat_compute_time_ += (post - pre).count();
+  TORCH_CHECK(ret.size() == outputs.size());
+  for (size_t i = 0; i < outputs.size(); ++i) {
+    if (auto output_cell = outputs[i].lock()) {
+      output_cell->fill(ret[i]);
+    }
+  }
+  ecn.reset();
+  for (const strong& s : inputs) {
+    s->pool->unlock();
+  }
+}
+
+ecn_ptr Rematerializer::get_ecn() {
+  if (!ecn) {
+    ecn = ecn_ptr::make(CheckpointInfo(compute_cost));
+  }
+  return ecn;
+}
+
+CheckpointInfo merge_cpi(CheckpointInfo l, CheckpointInfo r) {
+  return CheckpointInfo(l.compute_cost + r.compute_cost);
+}
+
+std::set<ecn_ptr> AliasPool::neighbor_ecn() {
+  std::set<ecn_ptr> ptr_set;
+  int size = neighbors.size();
+  for (size_t i = 0; i < size;) {
+    if (auto cptc = neighbors[i].lock()) {
+      if (cptc->pool->ecn) {
+        ptr_set.insert(cptc->pool->ecn);
+      }
+      ++i;
+    } else {
+      neighbors[i] = neighbors[size - 1];
+      --size;
+    }
+  }
+  if (size < neighbors.size()) {
+    neighbors.erase(neighbors.begin() + size);
+  }
+  return ptr_set;
+}
+
+
+double AliasPool::cost(time_t current_time) {
+  TORCH_CHECK(evictable());
+  time_t pre = std::chrono::system_clock::now();
+  auto cpi = CheckpointInfo(head_remat->compute_cost);
+  auto ecns = neighbor_ecn();
+  for (const auto& necn : ecns) {
+    cpi = merge_cpi(cpi, get_t(necn));
+  }
+  auto ret = cpi.cost(memory, (current_time - last_used_time).count());
+  time_t post = std::chrono::system_clock::now();
+  cost_time_ += (post - pre).count();
+  return ret;
+}
+
+void AliasPool::evict() {
+  TORCH_CHECK(!ecn);
+  ecn = head_remat->get_ecn();
+  auto ecns = neighbor_ecn();
+  for (const auto& necn : ecns) {
+    merge<CheckpointInfo>(merge_cpi, ecn, necn);
+  }
+  TORCH_CHECK(memory > 0);
+  TORCH_CHECK(lock_count == 0);
+  for (const weak& w : tensors) {
+    if (auto cell = w.lock()) {
+      cell->evict();
+    }
+  }
+}
+
+void AliasPool::set_not_evicted(const intrusive_ptr<AliasPool>& self) {
+  if (ecn) {
+    TORCH_CHECK(head_remat);
+    auto cpi = get_t(ecn);
+    update_t(ecn, CheckpointInfo(cpi.compute_cost - head_remat->compute_cost));
+    ecn.reset();
+    pool.add(self);
+  }
+}
+
+void CheckpointTensorCell::fill(const Tensor& t) {
+  if (!(this->t)) {
+    this->t = std::make_unique<Tensor>(t.detach());
+    pool->set_not_evicted(pool);
+    if (!defined) {
+      defined = true;
+      is_undefined_tensor = !t.defined();
+      key_set_ = t.key_set();
+      if (t.requires_grad()) {
+        key_set_ = key_set_.add(DispatchKey::Autograd);
+      }
+      dtype_ = t.dtype();
+      optional_device_ = t.optional_device();
+    }
+  }
+}
+
+Tensor CheckpointTensorImpl::get() const {
+  return ref->value->value->get();
 }
 
 CheckpointTensorImpl::CheckpointTensorImpl(const Tensor& t) : CheckpointTensorImpl(intrusive_ptr<External>::make(t)) { }

@@ -210,7 +210,6 @@ struct Rematerializer : intrusive_ptr_target {
   }
   void remat();
   ecn_ptr get_ecn();
-  CheckpointInfo get_cpi();
 };
 
 // Track all Tensor that share the same Storage.
@@ -420,9 +419,10 @@ struct TORCH_API CheckpointTensorImpl : TensorImpl {
   }
 };
 
-// CheckpointPool:
-// Keep a list of AliasPool, and search over them to choose the best one to evict.
-// Keep a list of External reference, 
+// CheckpointPool manage all the CheckpointTensor.
+// It allow one to:
+// 0: Search over all aliaspool to evict tensors.
+// 1: pin all the tensors.
 struct CheckpointPool {
   std::vector<weak_intrusive_ptr<AliasPool>> aps;
   std::vector<weak_intrusive_ptr<External>> exts;
@@ -438,7 +438,6 @@ struct CheckpointPool {
   void auto_evict();
   void clear_checkpointpool();
   void add(const intrusive_ptr<AliasPool>&);
-  CheckpointPool();
 };
 
 }
