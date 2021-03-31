@@ -291,6 +291,10 @@ CheckpointTensorImpl::CheckpointTensorImpl(const Ref<intrusive_ptr<External>>& r
 
 intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const VariableVersion& version_counter,
                                                                         bool allow_tensor_metadata_change) const {
+  // I was once a smartasss and thought I didnt need to copy,
+  // for the value is immutable.
+  // Turnout I am a dumbass:
+  // the autogradmeta is mutable.
   auto ret = intrusive_ptr<CheckpointTensorImpl>::make(ref);
   if (use_log_) {
     DTRLogCopy(ret->counter_name(), counter_name());
@@ -327,6 +331,123 @@ int get_alias(const Tensors& ts, const Tensor& t) {
     }
   }
   return -1;
+}
+
+void add_neighbor(const strong& l, const strong& r) {
+  l->pool->neighbors.push_back(weak(r));
+  r->pool->neighbors.push_back(weak(l));
+}
+
+struct MakeRawResult {
+  std::vector<intrusive_ptr<External>> outputs;
+  std::vector<int> aliases;
+  duration_t time;
+  intrusive_ptr<Rematerializer> rematerializer;
+};
+
+MakeRawResult make_raw(const rematerialize_function_t& remat_f,
+                       const strongs& inputs) {
+  for (const strong& s : inputs) {
+    s->pool->lock();
+  }
+  Tensors raw_inputs = uncheckpoint(inputs);
+  time_t pre = std::chrono::system_clock::now();
+  auto raw_outputs = remat_f(raw_inputs);
+  time_t post = std::chrono::system_clock::now();
+  pool.auto_evict();
+  base_compute_time_ += (post - pre).count();
+  std::vector<intrusive_ptr<External>> outputs;
+  std::vector<int> aliases;
+  weaks weak_outputs;
+  auto remat = intrusive_ptr<Rematerializer>::make(Unsafe(), remat_f, inputs, post - pre);
+
+  for (const Tensor& t : raw_outputs) {
+    intrusive_ptr<AliasPool> alias_pool;
+    int alias = get_alias(raw_inputs, t);
+    if (alias == -1) {
+      auto m = memory(t);
+      alias_pool = intrusive_ptr<AliasPool>::make(Unsafe(), remat, m);
+      pool.add(alias_pool);
+    }
+    else {
+      alias_pool = inputs[alias]->pool;
+      if (alias_pool->head_remat) {
+        alias_pool->head_remat->compute_cost += (post - pre);
+      }
+    }
+    auto e = intrusive_ptr<External>::make(t, alias_pool, remat);
+    pool.exts.push_back(weak_intrusive_ptr<External>(e));
+    alias_pool->tensors.push_back(weak(e->value));
+    outputs.push_back(e);
+    aliases.push_back(alias);
+    weak_outputs.push_back(weak(outputs.back()->value));
+  }
+  remat->outputs = weak_outputs;
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    for (size_t j = 0; j < outputs.size(); ++j) {
+      if (!is_alias(raw_inputs[i], raw_outputs[j])) {
+        add_neighbor(inputs[i], outputs[j]->value);
+      }
+    }
+  }
+  for (const strong& s : inputs) {
+    s->pool->unlock();
+  }
+  return {outputs, aliases, post - pre, remat};
+}
+
+std::string from_time(duration_t t) {
+  return std::to_string(std::chrono::nanoseconds(t).count());
+}
+
+Tensors CheckpointTensorImpl::make(const std::string& name,
+                                   const rematerialize_function_t& remat,
+                                   const Tensors& inputs) {
+  Tensors checkpointed_inputs = try_checkpoint(inputs);
+  auto input_size = checkpointed_inputs.size();
+
+  strongs input_values;
+  input_values.reserve(input_size);
+
+  std::vector<std::string> args;
+  args.reserve(input_size);
+
+  for (const Tensor& t: checkpointed_inputs) {
+    auto* cpti = must_get_cpti(t);
+    input_values.push_back(cpti->ref->value->value);
+    if (use_log_) {
+      args.push_back(cpti->counter_name());
+    }
+  }
+
+  auto ret = make_raw(remat, input_values);
+
+  Tensors tensors;
+  tensors.reserve(ret.outputs.size());
+
+  for (const auto& t: ret.outputs) {
+    auto cp = Tensor(intrusive_ptr<CheckpointTensorImpl>::make(t));
+    tensors.push_back(cp);
+  }
+
+  if (use_log_) {
+    std::vector<std::string> res;
+    res.reserve(ret.outputs.size());
+
+    for (const auto& tensor : tensors) {
+      res.push_back(get_cpti(tensor)->counter_name());
+    }
+
+    DTRLogCall(res, name, args, from_time(ret.time));
+    for (size_t i = 0; i < tensors.size(); ++i) {
+      Tensor t = tensors[i];
+      auto cpti = get_cpti(t);
+      DTRLogMemory(cpti->counter_name(), cpti->ref->value->value->memory());
+      DTRLogAlias(cpti->counter_name(), ret.aliases[i]);
+    }
+  }
+
+  return tensors;
 }
 
 void CheckpointTensorImpl::release_resources() {
@@ -478,50 +599,90 @@ IValue map_ivalue(const F& f, const IValue& iv) {
 // note: please be deterministic (same input give same output/same mutation on input no matter how many time it is called).
 // if it is not deterministic, at least dont change the shape of the output (if input shape not changed).
 // otherwise the code will break.
+// Right now uncheckedpointed tensor is converted into checkpoint tensor before going into CheckpointTensorImpl::make.
+// It seems like you can not convert to save time, but it break our logging code.
+// the code is a bit cleaner this way, and this extra information maybe helpful.
+// So there is two interface: CheckpointTensor's pure Tensors -> Tensors interface, and a stack mutating interface.
+// We have to convert twice.
+// In particular, we implement a stack mutating interface for checkpointedtensor,
+// by implementing a Tensors -> Tensors interface for ordinary tensor (the conversion is handled by tensors::make).
+// we implement that by converting it back to stack mutation.
+// Additionally, since the stack contain IValue instead of Tensors,
+// we have to inject/extracted the Tensors to/from the saved IValue
+// everytime we convert Tensors to/from stack.
+// Reminder: you can convert IValue to/from Tensor, but you should not do that in here,
+// as IValue may hold zero or more Tensor.
+// the only way to construct/destruct an IValue should be map_ivalue.
 void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack) {
-  std::cout << "inside fallback" << std::endl;
   std::cout << op.operator_name() << std::endl;
   auto s = op.schema();
   std::cout << s << std::endl;
-  size_t num_arg = s.arguments().size(), num_ret = s.returns().size();
+  size_t num_arg = s.arguments().size();
   TORCH_CHECK(!s.is_mutable()); // todo: deal with mutability. s.hasAnyAliasInfo() might be useful.
-  std::vector<IValue> reversed_in; // popping them from the jit stack and pushing them back will reverse stuff.
+  std::vector<IValue> checkpoint_reversed_ivalue_in; // popping them from the jit stack and pushing them back will reverse stuff.
   // but should we really reverse stuff? there is a peek() function which doesnt.
   // ezyang seems to want to replace stack impl from std::vector to some sort of array,
   // so slower peek() though.
   for (size_t i = 0; i < num_arg; ++i) {
-    reversed_in.push_back(torch::jit::pop(stack));
+    checkpoint_reversed_ivalue_in.push_back(torch::jit::pop(stack));
   }
-  // todo: is it safe to save a torch::jit::stack*?
+  Tensors checkpoint_tensors_in;
+  for (auto it = checkpoint_reversed_ivalue_in.rbegin(); it != checkpoint_reversed_ivalue_in.rend(); ++it) {
+    map_ivalue([&](const Tensor& t) {
+                 checkpoint_tensors_in.push_back(t);
+                 return t;
+               }, *it);
+  }
   // todo: modify on heap instead of pushing and popping?
-  auto call =
-    [=](){
-      for (auto it = reversed_in.rbegin(); it != reversed_in.rend(); ++it) {
-        torch::jit::push(stack, map_ivalue(native::decheckpoint, *it));
+  struct JitRemat {
+    c10::OperatorHandle op;
+    // todo: is it safe to save a torch::jit::stack*?
+    torch::jit::Stack* stack;
+    std::vector<IValue> checkpoint_reversed_ivalue_in;
+    std::shared_ptr<std::vector<IValue>> checkpoint_reversed_ivalue_out = std::make_shared<std::vector<IValue>>();
+    bool initial_call = true;
+    JitRemat(const c10::OperatorHandle& op, torch::jit::Stack* stack, const std::vector<IValue>& checkpoint_reversed_ivalue_in) :
+      op(op), stack(stack), checkpoint_reversed_ivalue_in(checkpoint_reversed_ivalue_in) { }
+    Tensors operator()(const Tensors& remat_in) {
+      size_t count = 0;
+      for (auto it = checkpoint_reversed_ivalue_in.rbegin(); it != checkpoint_reversed_ivalue_in.rend(); ++it) {
+        torch::jit::push(stack,
+                         map_ivalue([&](const Tensor&) {
+                                      auto ret = remat_in.at(count);
+                                      ++count;
+                                      return ret;
+                                    }, *it));
       }
       op.callBoxed(stack);
-      std::vector<IValue> reversed_out;
+      Tensors remat_out;
+      auto s = op.schema();
+      size_t num_ret = s.returns().size();
       for (size_t i = 0; i < num_ret; ++i) {
-        reversed_out.push_back(torch::jit::pop(stack));
+        auto iv = map_ivalue([&](const Tensor& t) {
+                          remat_out.push_back(t);
+                          return t;
+                        }, torch::jit::pop(stack));
+        // todo: loop unswitching by hand?
+        if (initial_call) {
+          checkpoint_reversed_ivalue_out->push_back(iv);
+        }
       }
-      return reversed_out;
-    };
-  auto reversed_out = call();
-  for (auto it = reversed_out.rbegin(); it != reversed_out.rend(); ++it) {
-    torch::jit::push(stack, map_ivalue(native::checkpoint, *it));
+      initial_call = false;
+      return remat_out;
+    }
+  } remat(op, stack, checkpoint_reversed_ivalue_in);
+  Tensors checkpoint_tensors_out = CheckpointTensorImpl::make(op.operator_name().name, remat, checkpoint_tensors_in);
+  size_t count = 0;
+  for (auto it = remat.checkpoint_reversed_ivalue_out->rbegin(); it != remat.checkpoint_reversed_ivalue_out->rend(); ++it) {
+    torch::jit::push(stack,
+                     map_ivalue([&](const Tensor&) {
+                                  auto ret = checkpoint_tensors_out.at(count);
+                                  ++count;
+                                  return ret;
+                                }, *it));
   }
-  return;
-
-  // rematerializer: grab the reversed_in, uncheckpoint and push all of them onto the stack,
-  // grab the output arguments from the stack and push them into reversed_out,
-  // then walk through all the tensor to update a list of receivers.
-
-  // as we are initializing, we need to do extra job.
-  // in particular, we will save a vector of children in the rematerializer,
-  // so when rematerializing, we can plug the value back in.
-  // a vector of parents are also saved for fast parent access which is needed for eviction cost evaluation.
-
-  // traverse all the ivalue but map all the tensor inside.
+  // clear the stored ivalue output, so the tensor returned can actually be freed from memory (if evicted).
+  remat.checkpoint_reversed_ivalue_out->clear();
 }
 
 // todo: i can also use a torch library impl instead of calling fallback explicitly. should i do that?
