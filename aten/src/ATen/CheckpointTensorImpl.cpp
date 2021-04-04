@@ -591,7 +591,7 @@ template<typename F>
 IValue map_ivalue(const F& f, const IValue& iv) {
   if (iv.isTensor()) {
     return f(iv.toTensor());
-  } else if (iv.isScalar() || iv.isBool() || iv.isDevice()) {
+  } else if (iv.isScalar() || iv.isBool() || iv.isDevice() || iv.isNone()) {
     return iv;
   } else {
     TORCH_CHECK(false, "unknown ivalue type: ", *(iv.type()));
@@ -616,7 +616,8 @@ IValue map_ivalue(const F& f, const IValue& iv) {
 // Reminder: you can convert IValue to/from Tensor, but you should not do that in here,
 // as IValue may hold zero or more Tensor.
 // the only way to construct/destruct an IValue should be map_ivalue.
-void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack) {
+void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack) { 
+  size_t before_size = stack->size();
   auto s = op.schema();
   std::cout << "calling " << s << std::endl;
   size_t num_arg = s.arguments().size();
@@ -646,6 +647,7 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
     JitRemat(const c10::OperatorHandle& op, torch::jit::Stack* stack, const std::vector<IValue>& checkpoint_reversed_ivalue_in) :
       op(op), stack(stack), checkpoint_reversed_ivalue_in(checkpoint_reversed_ivalue_in) { }
     Tensors operator()(const Tensors& remat_in) {
+      size_t before_size = stack->size();
       size_t count = 0;
       for (auto it = checkpoint_reversed_ivalue_in.rbegin(); it != checkpoint_reversed_ivalue_in.rend(); ++it) {
         torch::jit::push(stack,
@@ -670,6 +672,7 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
         }
       }
       initial_call = false;
+      TORCH_CHECK(before_size == stack->size());
       return remat_out;
     }
   } remat(op, stack, checkpoint_reversed_ivalue_in);
@@ -689,6 +692,7 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
   // clear the stored ivalue output, so the tensor returned can actually be freed from memory (if evicted).
   remat.checkpoint_reversed_ivalue_out->clear();
   std::cout << s << " ok" << std::endl;
+  TORCH_CHECK(before_size - s.arguments().size() + s.returns().size() == stack->size());
 }
 
 // todo: i can also use a torch library impl instead of calling fallback explicitly. should i do that?
