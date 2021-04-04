@@ -2,6 +2,7 @@
 #include <ATen/core/op_registration/op_registration.h>
 #include <ATen/core/dispatch/Dispatcher.h>
 #include <c10/cuda/CUDACachingAllocator.h>
+#include <csignal>
 
 namespace at {
 
@@ -258,6 +259,8 @@ void AliasPool::set_not_evicted(const intrusive_ptr<AliasPool>& self) {
 
 void CheckpointTensorCell::fill(const Tensor& t) {
   if (!(this->t)) {
+    TORCH_CHECK(!at::native::is_checkpoint(t));
+    TORCH_CHECK(!t.key_set().has(DispatchKey::Checkpoint))
     this->t = std::make_unique<Tensor>(t.detach());
     pool->set_not_evicted(pool);
     if (!defined) {
@@ -303,7 +306,7 @@ intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const Va
 }
 
 void CheckpointTensorImpl::shallow_copy_from(const c10::intrusive_ptr<TensorImpl>& impl) {
-  TORCH_CHECK(impl->key_set().has(DispatchKey::Checkpoint));
+  TORCH_CHECK(key_set() == impl->key_set());
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(impl.get());
   TORCH_CHECK(cpti != nullptr);
   ref->value = cpti->ref->value;
@@ -588,7 +591,7 @@ template<typename F>
 IValue map_ivalue(const F& f, const IValue& iv) {
   if (iv.isTensor()) {
     return f(iv.toTensor());
-  } else if (iv.isScalar()) {
+  } else if (iv.isScalar() || iv.isBool() || iv.isDevice()) {
     return iv;
   } else {
     TORCH_CHECK(false, "unknown ivalue type: ", *(iv.type()));
@@ -614,9 +617,8 @@ IValue map_ivalue(const F& f, const IValue& iv) {
 // as IValue may hold zero or more Tensor.
 // the only way to construct/destruct an IValue should be map_ivalue.
 void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack) {
-  std::cout << op.operator_name() << std::endl;
   auto s = op.schema();
-  std::cout << s << std::endl;
+  std::cout << "calling " << s << std::endl;
   size_t num_arg = s.arguments().size();
   TORCH_CHECK(!s.is_mutable()); // todo: deal with mutability. s.hasAnyAliasInfo() might be useful.
   std::vector<IValue> checkpoint_reversed_ivalue_in; // popping them from the jit stack and pushing them back will reverse stuff.
@@ -671,6 +673,9 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
       return remat_out;
     }
   } remat(op, stack, checkpoint_reversed_ivalue_in);
+  if (toString(op.operator_name()) == "aten::detach") {
+    std::raise(SIGINT);
+  }
   Tensors checkpoint_tensors_out = CheckpointTensorImpl::make(op.operator_name().name, remat, checkpoint_tensors_in);
   size_t count = 0;
   for (auto it = remat.checkpoint_reversed_ivalue_out->rbegin(); it != remat.checkpoint_reversed_ivalue_out->rend(); ++it) {
@@ -683,6 +688,7 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
   }
   // clear the stored ivalue output, so the tensor returned can actually be freed from memory (if evicted).
   remat.checkpoint_reversed_ivalue_out->clear();
+  std::cout << s << " ok" << std::endl;
 }
 
 // todo: i can also use a torch library impl instead of calling fallback explicitly. should i do that?

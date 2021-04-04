@@ -79,6 +79,7 @@ class DispatchKey(Enum):
     SparseHIP = auto()
     SparseXPU = auto()
     NestedTensor = auto()
+    Checkpoint = auto()
     PrivateUse1 = auto()
     PrivateUse2 = auto()
     PrivateUse3 = auto()

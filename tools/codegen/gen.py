@@ -919,6 +919,7 @@ def main() -> None:
         DispatchKey.QuantizedCUDA,
         DispatchKey.Math,
         DispatchKey.DefaultBackend,
+        DispatchKey.Checkpoint,
         # Meta is a magic key: it is automatically generated for structured
         # kernels
         DispatchKey.Meta,
