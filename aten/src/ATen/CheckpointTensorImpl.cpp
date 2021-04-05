@@ -140,6 +140,20 @@ void CheckpointPool::evict() {
   search_time_ += (post - pre).count();
 }
 
+// todo: make this a function of Checkpointpool
+// should we traverse all externals in chronological order or reverse chronological order?
+// my intuition tell me it should be reversed, because the reversed order prioritize the newer external,
+// which has tensor more near it unevicted (because of staleness).
+// if we go with chronological order, those tensors might be evicted.
+void CheckpointPool::clear_checkpointpool() {
+  while (!exts.empty()) {
+    if (auto e = exts.back().lock()) {
+      e->value->pin();
+    }
+    exts.pop_back();
+  }
+}
+
 Tensor uncheckpoint(const strong& input) {
   return input->get();
 }
@@ -305,6 +319,11 @@ intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const Va
   return ret;
 }
 
+intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(VariableVersion&& version_counter,
+                                                                        bool allow_tensor_metadata_change) const {
+  return shallow_copy_and_detach(version_counter, allow_tensor_metadata_change);
+}
+
 void CheckpointTensorImpl::shallow_copy_from(const c10::intrusive_ptr<TensorImpl>& impl) {
   TORCH_CHECK(key_set() == impl->key_set());
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(impl.get());
@@ -460,6 +479,74 @@ void CheckpointTensorImpl::release_resources() {
   ref.reset();
 }
 
+struct CheckpointFunctionsImpl: CheckpointFunctions {
+  void new_log(std::string str) override {
+    DTRLogger::logger().out = std::ofstream(DTRLogger::logger().get_filename(str));
+  }
+  void annotate_log(std::string str) override {
+    if (!use_log_) { return; }
+    if (log_json) {
+      json j;
+      j[INSTRUCTION] = "ANNOTATE";
+      j[ANNOTATION] = str;
+      DTRLogger::logger().log(j.dump());
+    } else {
+      DTRLogger::logger().log("# " + str);
+    }
+  }
+  void toggle_log(bool b) override {
+    use_log_ = b;
+  }
+  void clear_checkpointpool() override {
+    pool.clear_checkpointpool();
+  }
+  void unset_memory_budget() override {
+    pool.has_memory_budget = false;
+  }
+  void set_memory_budget(long budget) override {
+    pool.memory_budget = budget;
+    pool.has_memory_budget = true;
+  }
+  void toggle_sampling(bool sample) override {
+    pool.sample_tensors = sample;
+  }
+  void toggle_ignore_small_tensors(bool ignore) override {
+    pool.ignore_small_tensors = ignore;
+  }
+  void toggle_profile(bool profile) override {
+    use_profile_ = profile;
+  }
+  void reset_profile() override {
+    base_compute_time_ = 0;
+    remat_compute_time_ = 0;
+    search_time_ = 0;
+    cost_time_ = 0;
+  }
+  long base_compute_time() override {
+    return base_compute_time_;
+  }
+  long remat_compute_time() override {
+    return remat_compute_time_;
+  }
+  long compute_time() override {
+    return base_compute_time() + remat_compute_time();
+  }
+  long cost_time() override {
+    return cost_time_;
+  }
+  long search_time() override {
+    return search_time_;
+  }
+  long loop_time() override {
+    return search_time() - cost_time();
+  }
+};
+
+CheckpointFunctions* GetCheckpointFunctions() {
+  static CheckpointFunctionsImpl cpfi;
+  return &cpfi;
+}
+
 namespace native {
 
 Tensor checkpoint(const Tensor& t) {
@@ -499,99 +586,15 @@ Tensor try_checkpoint(const Tensor& t) {
   return is_checkpoint(t) ? t : checkpoint(t);
 }
 
-void new_log(std::string str) {
-  DTRLogger::logger().out = std::ofstream(DTRLogger::logger().get_filename(str));
-}
-
-void annotate_log(std::string str) {
-  if (!use_log_) { return; }
-  if (log_json) {
-    json j;
-    j[INSTRUCTION] = "ANNOTATE";
-    j[ANNOTATION] = str;
-    DTRLogger::logger().log(j.dump());
-  } else {
-    DTRLogger::logger().log("# " + str);
-  }
-}
-
-void toggle_log(bool b) {
-  use_log_ = b;
-}
-
-// todo: make this a function of Checkpointpool
-// should we traverse all externals in chronological order or reverse chronological order?
-// my intuition tell me it should be reversed, because the reversed order prioritize the newer external,
-// which has tensor more near it unevicted (because of staleness).
-// if we go with chronological order, those tensors might be evicted.
-void clear_checkpointpool() {
-  while (!pool.exts.empty()) {
-    if (auto e = pool.exts.back().lock()) {
-      e->value->pin();
-    }
-    pool.exts.pop_back();
-  }
-}
-
-void unset_memory_budget() {
-  pool.has_memory_budget = false;
-}
-
-void set_memory_budget(long budget) {
-  pool.memory_budget = budget;
-  pool.has_memory_budget = true;
-}
-
-void toggle_sampling(bool sample) {
-  pool.sample_tensors = sample;
-}
-
-void toggle_ignore_small_tensors(bool ignore) {
-  pool.ignore_small_tensors = ignore;
-}
-
-void reset_profile() {
-  base_compute_time_ = 0;
-  remat_compute_time_ = 0;
-  search_time_ = 0;
-  cost_time_ = 0;
-}
-
-void toggle_profile(bool profile) {
-  use_profile_ = profile;
-}
-
-long remat_compute_time() {
-  return remat_compute_time_;
-}
-
-long base_compute_time() {
-  return base_compute_time_;
-}
-
-long compute_time() {
-  return base_compute_time() + remat_compute_time();
-}
-
-long cost_time() {
-  return cost_time_;
-}
-
-long search_time() {
-  return search_time_;
-}
-
-long loop_time() {
-  return search_time() - cost_time();
-}
 }
 
 // map over the tensor in the ivalue.
+// weird stuff. seems like i cant write a generic function over all list :(
 template<typename F>
 IValue map_ivalue(const F& f, const IValue& iv) {
   if (iv.isTensor()) {
     return f(iv.toTensor());
-  } else if (iv.isScalar() || iv.isBool() || iv.isDevice() || iv.isNone()) {
+  } else if (iv.isScalar() || iv.isBool() || iv.isDevice() || iv.isNone() || iv.isIntList()) {
     return iv;
   } else {
     TORCH_CHECK(false, "unknown ivalue type: ", *(iv.type()));
@@ -616,10 +619,9 @@ IValue map_ivalue(const F& f, const IValue& iv) {
 // Reminder: you can convert IValue to/from Tensor, but you should not do that in here,
 // as IValue may hold zero or more Tensor.
 // the only way to construct/destruct an IValue should be map_ivalue.
-void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack) { 
+void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack) {
   size_t before_size = stack->size();
   auto s = op.schema();
-  std::cout << "calling " << s << std::endl;
   size_t num_arg = s.arguments().size();
   TORCH_CHECK(!s.is_mutable()); // todo: deal with mutability. s.hasAnyAliasInfo() might be useful.
   std::vector<IValue> checkpoint_reversed_ivalue_in; // popping them from the jit stack and pushing them back will reverse stuff.
@@ -691,7 +693,6 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
   }
   // clear the stored ivalue output, so the tensor returned can actually be freed from memory (if evicted).
   remat.checkpoint_reversed_ivalue_out->clear();
-  std::cout << s << " ok" << std::endl;
   TORCH_CHECK(before_size - s.arguments().size() + s.returns().size() == stack->size());
 }
 
