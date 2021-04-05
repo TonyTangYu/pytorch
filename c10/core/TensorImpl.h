@@ -1021,6 +1021,12 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
    * compatible with SparseCUDA.
    */
   inline bool has_compatible_shallow_copy_type(DispatchKeySet from) {
+    if (key_set_ == from) {
+      return true;
+    }
+    if (key_set_.has(DispatchKey::Checkpoint) || from.has(DispatchKey::Checkpoint)) {
+      return false;
+    }
     auto is_dense = [](DispatchKeySet ts) {
       return ts.has(DispatchKey::CPU) || ts.has(DispatchKey::CUDA) ||
           ts.has(DispatchKey::HIP) || ts.has(DispatchKey::XPU);
@@ -1030,7 +1036,7 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
           ts.has(DispatchKey::SparseCUDA) || ts.has(DispatchKey::SparseHIP) ||
           ts.has(DispatchKey::SparseXPU);
     };
-    return (key_set_ == from) || (is_dense(key_set_) && is_dense(from)) || (is_sparse(key_set_) && is_sparse(from));
+    return (is_dense(key_set_) && is_dense(from)) || (is_sparse(key_set_) && is_sparse(from));
   }
 
   /**

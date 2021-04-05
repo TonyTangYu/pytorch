@@ -410,6 +410,7 @@ class Module:
                 should_use_set_data = compute_should_use_set_data(param, param_applied)
                 if should_use_set_data:
                     param.data = param_applied
+                    param.data.validate()
                 else:
                     assert isinstance(param, Parameter)
                     assert param.is_leaf
@@ -424,6 +425,7 @@ class Module:
                     else:
                         assert param.grad.is_leaf
                         self._parameters[key].grad = grad_applied.requires_grad_(param.grad.requires_grad)
+                param.validate()
 
         for key, buf in self._buffers.items():
             if buf is not None:
@@ -1263,6 +1265,8 @@ class Module:
 
         """
         for name, param in self.named_parameters(recurse=recurse):
+            print("here")
+            param.validate()
             yield param
 
     def named_parameters(self, prefix: str = '', recurse: bool = True) -> Iterator[Tuple[str, Parameter]]:

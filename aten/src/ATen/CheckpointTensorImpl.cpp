@@ -1,7 +1,7 @@
 #include <ATen/CheckpointTensorImpl.h>
 #include <ATen/core/op_registration/op_registration.h>
 #include <ATen/core/dispatch/Dispatcher.h>
-
+#include <csignal>
 namespace at {
 
 CheckpointTensorImpl* get_cpti(const Tensor& t) {
@@ -40,11 +40,21 @@ Tensor decheckpoint(const Tensor& t) {
 }
 
 bool is_checkpoint(const Tensor& t) {
+  validate(t);
   return get_cpti(t) != nullptr;
 }
 
 Tensor try_checkpoint(const Tensor& t) {
   return is_checkpoint(t) ? t : checkpoint(t);
+}
+
+void validate(const Tensor& t) {
+  auto cpti_exist = get_cpti(t) != nullptr;
+  auto key_set_has_checkpoint = t.key_set().has(DispatchKey::Checkpoint);
+  if (cpti_exist != key_set_has_checkpoint) {
+    //std::raise(SIGINT);
+  }
+  TORCH_CHECK(cpti_exist == key_set_has_checkpoint, typeid(*t.unsafeGetTensorImpl()).name(), " ", t.key_set());
 }
 
 }
@@ -54,7 +64,7 @@ template<typename F>
 IValue map_ivalue(const F& f, const IValue& iv) {
   if (iv.isTensor()) {
     return f(iv.toTensor());
-  } else if (iv.isScalar()) {
+  } else if (iv.isScalar() || iv.isNone()) {
     return iv;
   } else {
     TORCH_CHECK(false, "unknown ivalue type: ", *(iv.type()));
@@ -66,13 +76,9 @@ IValue map_ivalue(const F& f, const IValue& iv) {
 // if it is not deterministic, at least dont change the shape of the output (if input shape not changed).
 // otherwise the code will break.
 void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack) {
-  std::cout << "inside fallback" << std::endl;
-  std::cout << op.operator_name() << std::endl;
   auto s = op.schema();
   std::cout << s << std::endl;
   size_t num_arg = s.arguments().size(), num_ret = s.returns().size();
-  std::cout << num_arg << std::endl;
-  std::cout << num_ret << std::endl;
   TORCH_CHECK(!s.is_mutable()); // todo: deal with mutability. s.hasAnyAliasInfo() might be useful.
   std::vector<IValue> reversed_in, reversed_out; // popping them from the jit stack and pushing them back will reverse stuff.
 
