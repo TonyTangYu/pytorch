@@ -629,7 +629,7 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
   std::vector<IValue> checkpoint_reversed_ivalue_in; // popping them from the jit stack and pushing them back will reverse stuff.
   std::vector<bool> checkpoint_reversed_ivalue_in_mutable;
   // but should we really reverse stuff? there is a peek() function which doesnt.
-  // ezyang seems to want to replace stack impl from std::vector to some sort of array,
+  // ezyang seems to want to replace stack impl from std::vector to some sort of list,
   // so slower peek() though.
   for (size_t i = 0; i < num_arg; ++i) {
     checkpoint_reversed_ivalue_in.push_back(torch::jit::pop(stack));
@@ -658,27 +658,22 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
   struct JitRemat {
     struct Boxed {
       c10::OperatorHandle op;
-      // todo: is it safe to save a torch::jit::stack*?
-      // todo: it is unsafe. fix it.
-      torch::jit::Stack* stack;
       std::vector<IValue> checkpoint_reversed_ivalue_in;
       std::vector<IValue> checkpoint_reversed_ivalue_out;
       std::vector<bool> checkpoint_tensors_in_mutable;
       bool initial_call = true;
       Boxed(const c10::OperatorHandle& op,
-            torch::jit::Stack* stack,
             const std::vector<IValue>& checkpoint_reversed_ivalue_in,
             const std::vector<bool>& checkpoint_tensors_in_mutable) :
         op(op),
-        stack(stack),
         checkpoint_reversed_ivalue_in(checkpoint_reversed_ivalue_in),
         checkpoint_tensors_in_mutable(checkpoint_tensors_in_mutable) { }
       Tensors operator()(const Tensors& remat_in) {
-        size_t before_size = stack->size();
+        torch::jit::Stack stack;
         size_t count = 0;
         Tensors copied_values;
         for (auto it = checkpoint_reversed_ivalue_in.rbegin(); it != checkpoint_reversed_ivalue_in.rend(); ++it) {
-          torch::jit::push(stack,
+          torch::jit::push(&stack,
                            map_ivalue([&](const Tensor&) {
                                         auto rem_at = remat_in.at(count);
                                         auto ret = [&]() {
@@ -695,7 +690,7 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
                                       }, *it));
         }
         TORCH_CHECK(count == remat_in.size());
-        op.callBoxed(stack);
+        op.callBoxed(&stack);
         Tensors remat_out;
         auto s = op.schema();
         size_t num_ret = s.returns().size();
@@ -703,7 +698,7 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
           auto iv = map_ivalue([&](const Tensor& t) {
                                  remat_out.push_back(t);
                                  return t;
-                               }, torch::jit::pop(stack));
+                               }, torch::jit::pop(&stack));
           // todo: loop unswitching by hand?
           if (initial_call) {
             checkpoint_reversed_ivalue_out.push_back(iv);
@@ -713,18 +708,17 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
           remat_out.push_back(t);
         }
         initial_call = false;
-        TORCH_CHECK(before_size == stack->size());
+        TORCH_CHECK(stack.empty());
         return remat_out;
       }
     };
     std::shared_ptr<Boxed> boxed;
     JitRemat(const c10::OperatorHandle& op,
-             torch::jit::Stack* stack,
              const std::vector<IValue>& checkpoint_reversed_ivalue_in,
              const std::vector<bool>& checkpoint_tensors_in_mutable) :
-      boxed(std::make_shared<Boxed>(op, stack, checkpoint_reversed_ivalue_in, checkpoint_tensors_in_mutable)) { }
+      boxed(std::make_shared<Boxed>(op, checkpoint_reversed_ivalue_in, checkpoint_tensors_in_mutable)) { }
     Tensors operator()(const Tensors& remat_in) { return (*boxed)(remat_in); }
-  } remat(op, stack, checkpoint_reversed_ivalue_in, checkpoint_tensors_in_mutable);
+  } remat(op, checkpoint_reversed_ivalue_in, checkpoint_tensors_in_mutable);
   auto make_raw_result = make_raw(remat, checkpoint_tensors_in);
   size_t count = 0;
   for (auto it = remat.boxed->checkpoint_reversed_ivalue_out.rbegin(); it != remat.boxed->checkpoint_reversed_ivalue_out.rend(); ++it) {
