@@ -2,7 +2,6 @@
 #include <ATen/core/op_registration/op_registration.h>
 #include <ATen/core/dispatch/Dispatcher.h>
 #include <c10/cuda/CUDACachingAllocator.h>
-#include <csignal>
 
 namespace at {
 
@@ -152,6 +151,7 @@ void CheckpointPool::clear_checkpointpool() {
     }
     exts.pop_back();
   }
+  aps.clear();
 }
 
 Tensor uncheckpoint(const strong& input) {
@@ -573,9 +573,7 @@ Tensor decheckpoint(const Tensor& t) {
 }
 
 void pin(Tensor& t) {
-  auto* cpti = dynamic_cast<CheckpointTensorImpl*>(t.unsafeGetTensorImpl());
-  TORCH_CHECK(cpti != nullptr);
-  cpti->ref->value->value->pin();
+  must_get_cpti(t)->ref->value->value->pin();
 }
 
 bool is_checkpoint(const Tensor& t) {
@@ -602,6 +600,10 @@ IValue map_ivalue(const F& f, const IValue& iv) {
   }
 }
 
+Ref<intrusive_ptr<External>> cell_from_tensor(const Tensor& t) {
+  return must_get_cpti(t)->ref;
+}
+
 // note: please be deterministic (same input give same output/same mutation on input no matter how many time it is called).
 // if it is not deterministic, at least dont change the shape of the output (if input shape not changed).
 // otherwise the code will break.
@@ -623,77 +625,126 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
   size_t before_size = stack->size();
   auto s = op.schema();
   size_t num_arg = s.arguments().size();
-  TORCH_CHECK(!s.is_mutable()); // todo: deal with mutability. s.hasAnyAliasInfo() might be useful.
+  // todo: use s.hasAnyAliasInfo() to figure out alias info instead of doing a runtime loop.
   std::vector<IValue> checkpoint_reversed_ivalue_in; // popping them from the jit stack and pushing them back will reverse stuff.
+  std::vector<bool> checkpoint_reversed_ivalue_in_mutable;
   // but should we really reverse stuff? there is a peek() function which doesnt.
   // ezyang seems to want to replace stack impl from std::vector to some sort of array,
   // so slower peek() though.
   for (size_t i = 0; i < num_arg; ++i) {
     checkpoint_reversed_ivalue_in.push_back(torch::jit::pop(stack));
+    const auto& aliasInfo = s.arguments()[s.arguments().size() - 1 - i].alias_info();
+    checkpoint_reversed_ivalue_in_mutable.push_back(aliasInfo && aliasInfo.value().isWrite());
   }
-  Tensors checkpoint_tensors_in;
-  for (auto it = checkpoint_reversed_ivalue_in.rbegin(); it != checkpoint_reversed_ivalue_in.rend(); ++it) {
+  Tensors original_tensors_in;
+  strongs checkpoint_tensors_in;
+  std::vector<bool> checkpoint_tensors_in_mutable;
+  auto it = checkpoint_reversed_ivalue_in.rbegin();
+  auto mit = checkpoint_reversed_ivalue_in_mutable.rbegin();
+  while (it != checkpoint_reversed_ivalue_in.rend()) {
+    TORCH_CHECK(mit != checkpoint_reversed_ivalue_in_mutable.rend());
     map_ivalue([&](const Tensor& t) {
-                 checkpoint_tensors_in.push_back(t);
-                 return t;
+                 original_tensors_in.push_back(t);
+                 auto tcp = native::try_checkpoint(t);
+                 auto* cpti = must_get_cpti(tcp);
+                 checkpoint_tensors_in.push_back(cpti->ref->value->value);
+                 checkpoint_tensors_in_mutable.push_back(*mit);
+                 return t; // dont care value
                }, *it);
+    ++it;
+    ++mit;
   }
   // todo: modify on heap instead of pushing and popping?
   struct JitRemat {
-    c10::OperatorHandle op;
-    // todo: is it safe to save a torch::jit::stack*?
-    torch::jit::Stack* stack;
-    std::vector<IValue> checkpoint_reversed_ivalue_in;
-    std::shared_ptr<std::vector<IValue>> checkpoint_reversed_ivalue_out = std::make_shared<std::vector<IValue>>();
-    bool initial_call = true;
-    JitRemat(const c10::OperatorHandle& op, torch::jit::Stack* stack, const std::vector<IValue>& checkpoint_reversed_ivalue_in) :
-      op(op), stack(stack), checkpoint_reversed_ivalue_in(checkpoint_reversed_ivalue_in) { }
-    Tensors operator()(const Tensors& remat_in) {
-      size_t before_size = stack->size();
-      size_t count = 0;
-      for (auto it = checkpoint_reversed_ivalue_in.rbegin(); it != checkpoint_reversed_ivalue_in.rend(); ++it) {
-        torch::jit::push(stack,
-                         map_ivalue([&](const Tensor&) {
-                                      auto ret = remat_in.at(count);
-                                      ++count;
-                                      return ret;
-                                    }, *it));
-      }
-      op.callBoxed(stack);
-      Tensors remat_out;
-      auto s = op.schema();
-      size_t num_ret = s.returns().size();
-      for (size_t i = 0; i < num_ret; ++i) {
-        auto iv = map_ivalue([&](const Tensor& t) {
-                          remat_out.push_back(t);
-                          return t;
-                        }, torch::jit::pop(stack));
-        // todo: loop unswitching by hand?
-        if (initial_call) {
-          checkpoint_reversed_ivalue_out->push_back(iv);
+    struct Boxed {
+      c10::OperatorHandle op;
+      // todo: is it safe to save a torch::jit::stack*?
+      // todo: it is unsafe. fix it.
+      torch::jit::Stack* stack;
+      std::vector<IValue> checkpoint_reversed_ivalue_in;
+      std::vector<IValue> checkpoint_reversed_ivalue_out;
+      std::vector<bool> checkpoint_tensors_in_mutable;
+      bool initial_call = true;
+      Boxed(const c10::OperatorHandle& op,
+            torch::jit::Stack* stack,
+            const std::vector<IValue>& checkpoint_reversed_ivalue_in,
+            const std::vector<bool>& checkpoint_tensors_in_mutable) :
+        op(op),
+        stack(stack),
+        checkpoint_reversed_ivalue_in(checkpoint_reversed_ivalue_in),
+        checkpoint_tensors_in_mutable(checkpoint_tensors_in_mutable) { }
+      Tensors operator()(const Tensors& remat_in) {
+        size_t before_size = stack->size();
+        size_t count = 0;
+        Tensors copied_values;
+        for (auto it = checkpoint_reversed_ivalue_in.rbegin(); it != checkpoint_reversed_ivalue_in.rend(); ++it) {
+          torch::jit::push(stack,
+                           map_ivalue([&](const Tensor&) {
+                                        auto rem_at = remat_in.at(count);
+                                        auto ret = [&]() {
+                                                     if (checkpoint_tensors_in_mutable.at(count)) {
+                                                       auto cloned = rem_at.clone();
+                                                       copied_values.push_back(cloned);
+                                                       return cloned;
+                                                     } else {
+                                                       return rem_at;
+                                                     }
+                                                   }();
+                                        ++count;
+                                        return ret;
+                                      }, *it));
         }
+        TORCH_CHECK(count == remat_in.size());
+        op.callBoxed(stack);
+        Tensors remat_out;
+        auto s = op.schema();
+        size_t num_ret = s.returns().size();
+        for (size_t i = 0; i < num_ret; ++i) {
+          auto iv = map_ivalue([&](const Tensor& t) {
+                                 remat_out.push_back(t);
+                                 return t;
+                               }, torch::jit::pop(stack));
+          // todo: loop unswitching by hand?
+          if (initial_call) {
+            checkpoint_reversed_ivalue_out.push_back(iv);
+          }
+        }
+        for (const Tensor& t: copied_values) {
+          remat_out.push_back(t);
+        }
+        initial_call = false;
+        TORCH_CHECK(before_size == stack->size());
+        return remat_out;
       }
-      initial_call = false;
-      TORCH_CHECK(before_size == stack->size());
-      return remat_out;
-    }
-  } remat(op, stack, checkpoint_reversed_ivalue_in);
-  if (toString(op.operator_name()) == "aten::detach") {
-    std::raise(SIGINT);
-  }
-  Tensors checkpoint_tensors_out = CheckpointTensorImpl::make(op.operator_name().name, remat, checkpoint_tensors_in);
+    };
+    std::shared_ptr<Boxed> boxed;
+    JitRemat(const c10::OperatorHandle& op,
+             torch::jit::Stack* stack,
+             const std::vector<IValue>& checkpoint_reversed_ivalue_in,
+             const std::vector<bool>& checkpoint_tensors_in_mutable) :
+      boxed(std::make_shared<Boxed>(op, stack, checkpoint_reversed_ivalue_in, checkpoint_tensors_in_mutable)) { }
+    Tensors operator()(const Tensors& remat_in) { return (*boxed)(remat_in); }
+  } remat(op, stack, checkpoint_reversed_ivalue_in, checkpoint_tensors_in_mutable);
+  auto make_raw_result = make_raw(remat, checkpoint_tensors_in);
   size_t count = 0;
-  for (auto it = remat.checkpoint_reversed_ivalue_out->rbegin(); it != remat.checkpoint_reversed_ivalue_out->rend(); ++it) {
+  for (auto it = remat.boxed->checkpoint_reversed_ivalue_out.rbegin(); it != remat.boxed->checkpoint_reversed_ivalue_out.rend(); ++it) {
     torch::jit::push(stack,
                      map_ivalue([&](const Tensor&) {
-                                  auto ret = checkpoint_tensors_out.at(count);
+                                  auto out = make_raw_result.outputs.at(count);
                                   ++count;
-                                  return ret;
+                                  return Tensor(intrusive_ptr<CheckpointTensorImpl>::make(out));
                                 }, *it));
   }
+  for (size_t i = 0; i < checkpoint_tensors_in.size(); ++i) {
+    if (checkpoint_tensors_in_mutable.at(i)) {
+      cell_from_tensor(original_tensors_in.at(i))->value = make_raw_result.outputs.at(count);
+      ++count;
+    }
+  }
   // clear the stored ivalue output, so the tensor returned can actually be freed from memory (if evicted).
-  remat.checkpoint_reversed_ivalue_out->clear();
+  remat.boxed->checkpoint_reversed_ivalue_out.clear();
   TORCH_CHECK(before_size - s.arguments().size() + s.returns().size() == stack->size());
+  TORCH_CHECK(count == make_raw_result.outputs.size());
 }
 
 // todo: i can also use a torch library impl instead of calling fallback explicitly. should i do that?
