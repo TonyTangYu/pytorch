@@ -484,14 +484,11 @@ struct CheckpointFunctionsImpl: CheckpointFunctions {
     DTRLogger::logger().out = std::ofstream(DTRLogger::logger().get_filename(str));
   }
   void annotate_log(std::string str) override {
-    if (!use_log_) { return; }
-    if (log_json) {
+    if (use_log_) {
       json j;
       j[INSTRUCTION] = "ANNOTATE";
       j[ANNOTATION] = str;
       DTRLogger::logger().log(j.dump());
-    } else {
-      DTRLogger::logger().log("# " + str);
     }
   }
   void toggle_log(bool b) override {
