@@ -591,7 +591,14 @@ IValue map_ivalue(const F& f, const IValue& iv) {
     return f(iv.toTensor());
   } else if (iv.isScalar() || iv.isBool() || iv.isDevice() || iv.isNone() || iv.isIntList()) {
     return iv;
-  } else {
+  } else if (iv.isTensorList()) {
+    std::vector<Tensor> ts;
+    for (const auto& t: iv.toTensorList()) {
+      ts.push_back(f(t));
+    }
+    return ts;
+  }
+  else {
     TORCH_CHECK(false, "unknown ivalue type: ", *(iv.type()));
     throw;
   }
