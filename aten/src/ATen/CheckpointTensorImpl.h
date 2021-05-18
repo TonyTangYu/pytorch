@@ -257,7 +257,7 @@ struct AliasPool : intrusive_ptr_target {
   void release_external() {
     TORCH_CHECK(external_count > 0);
     --external_count;
-    if (external_count == 0 && evictable()) {
+    if (memory > 0 && external_count == 0 && evictable()) {
       evict();
     }
   }
