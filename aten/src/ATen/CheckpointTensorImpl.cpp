@@ -588,7 +588,7 @@ template<typename F>
 IValue map_ivalue(const F& f, const IValue& iv) {
   if (iv.isTensor()) {
     return f(iv.toTensor());
-  } else if (iv.isScalar() || iv.isBool() || iv.isDevice() || iv.isNone() || iv.isIntList() || iv.isBoolList()) {
+  } else if (iv.isScalar() || iv.isBool() || iv.isDevice() || iv.isNone() || iv.isIntList() || iv.isBoolList() || iv.isDoubleList()) {
     return iv;
   } else if (iv.isTensorList()) {
     std::vector<Tensor> ts;
