@@ -697,9 +697,10 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
         Tensors remat_out;
         auto s = op.schema();
         size_t num_ret = s.returns().size();
-        if (initial_call) {
-          for (size_t i = 0; i < num_ret; ++i) {
-            checkpoint_reversed_ivalue_out.push_back(torch::jit::pop(&stack));
+        for (size_t i = 0; i < num_ret; ++i) {
+          auto v = torch::jit::pop(&stack);
+          if (initial_call) {
+            checkpoint_reversed_ivalue_out.push_back(v);
           }
         }
         for (auto it = checkpoint_reversed_ivalue_out.rbegin(); it != checkpoint_reversed_ivalue_out.rend(); ++it) {
