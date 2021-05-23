@@ -400,22 +400,25 @@ struct TORCH_API CheckpointTensorImpl : TensorImpl {
   void shallow_copy_from(const c10::intrusive_ptr<TensorImpl>& impl) override;
 
   int64_t dim() const override {
-    return ref->value->value->get().dim();
+    return get().dim();
   }
   int64_t numel() const override {
-    return ref->value->value->get().numel();
+    return get().numel();
   }
   IntArrayRef sizes() const override {
-    return ref->value->value->get().sizes();
+    return get().sizes();
   }
   int64_t size(int64_t d) const override {
-    return ref->value->value->get().size(d);
+    return get().size(d);
   }
   IntArrayRef strides() const override {
-    return ref->value->value->get().strides();
+    return get().strides();
   }
   int64_t stride(int64_t d) const override {
-    return ref->value->value->get().stride(d);
+    return get().stride(d);
+  }
+  bool is_contiguous(at::MemoryFormat memory_format) const override {
+    return get().is_contiguous(memory_format);
   }
   bool has_storage() const override {
     return false;
