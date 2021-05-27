@@ -3968,6 +3968,8 @@
 
 - func: _has_compatible_shallow_copy_type(Tensor self, Tensor from) -> bool
   variants: function
+  dispatch:
+    DefaultBackend: _has_compatible_shallow_copy_type
 
 - func: _unique(Tensor self, bool sorted=True, bool return_inverse=False) -> (Tensor, Tensor)
   variants: function
@@ -4811,18 +4813,26 @@
   use_c10_dispatcher: hacky_wrapper_for_legacy_signatures
   variants: method
   device_guard: False
+  dispatch:
+    DefaultBackend: to 
 
 - func: to.device(Tensor self, Device device, ScalarType dtype, bool non_blocking=False, bool copy=False, MemoryFormat? memory_format=None) -> Tensor
   variants: method
   device_guard: False
+  dispatch:
+    DefaultBackend: to 
 
 - func: to.dtype(Tensor self, ScalarType dtype, bool non_blocking=False, bool copy=False, MemoryFormat? memory_format=None) -> Tensor
   variants: method
   device_guard: False
+  dispatch:
+    DefaultBackend: to 
 
 - func: to.other(Tensor self, Tensor other, bool non_blocking=False, bool copy=False, MemoryFormat? memory_format=None) -> Tensor
   variants: method
   device_guard: False
+  dispatch:
+    DefaultBackend: to 
 
 - func: meshgrid(Tensor[] tensors) -> Tensor[]
 
@@ -5146,6 +5156,8 @@
 
 - func: bitwise_and.Tensor(Tensor self, Tensor other) -> Tensor
   variants: method, function
+  dispatch:
+    CPU, CUDA: bitwise_and
 
 - func: bitwise_and_.Scalar(Tensor(a!) self, Scalar other) -> Tensor(a!)
   variants: method

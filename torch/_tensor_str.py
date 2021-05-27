@@ -222,6 +222,9 @@ def _tensor_str(self, indent):
     if self.numel() == 0:
         return '[]'
 
+    if self.is_checkpoint():
+        self = self.uncheckpoint()
+
     if self.has_names():
         # There are two main codepaths (possibly more) that tensor printing goes through:
         # - tensor data can fit comfortably on screen
