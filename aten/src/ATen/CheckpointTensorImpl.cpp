@@ -700,10 +700,7 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
         auto s = op.schema();
         size_t num_ret = s.returns().size();
         for (size_t i = 0; i < num_ret; ++i) {
-          auto v = torch::jit::pop(&stack);
-          if (initial_call) {
-            checkpoint_reversed_ivalue_out.push_back(v);
-          }
+          checkpoint_reversed_ivalue_out.push_back(torch::jit::pop(&stack));
         }
         for (auto it = checkpoint_reversed_ivalue_out.rbegin(); it != checkpoint_reversed_ivalue_out.rend(); ++it) {
           map_ivalue([&](const Tensor& t) {
@@ -713,6 +710,11 @@ void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
         }
         for (const Tensor& t: copied_values) {
           remat_out.push_back(t);
+        }
+        if (initial_call) {
+          initial_call = false;
+        } else {
+          checkpoint_reversed_ivalue_out.clear();
         }
         initial_call = false;
         TORCH_CHECK(stack.empty());
