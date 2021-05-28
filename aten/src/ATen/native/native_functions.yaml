@@ -4813,26 +4813,26 @@
   use_c10_dispatcher: hacky_wrapper_for_legacy_signatures
   variants: method
   device_guard: False
-  dispatch:
-    DefaultBackend: to 
+#  dispatch:
+#    DefaultBackend: to 
 
 - func: to.device(Tensor self, Device device, ScalarType dtype, bool non_blocking=False, bool copy=False, MemoryFormat? memory_format=None) -> Tensor
   variants: method
   device_guard: False
-  dispatch:
-    DefaultBackend: to 
+#  dispatch:
+#    DefaultBackend: to 
 
 - func: to.dtype(Tensor self, ScalarType dtype, bool non_blocking=False, bool copy=False, MemoryFormat? memory_format=None) -> Tensor
   variants: method
   device_guard: False
-  dispatch:
-    DefaultBackend: to 
+#  dispatch:
+#    DefaultBackend: to 
 
 - func: to.other(Tensor self, Tensor other, bool non_blocking=False, bool copy=False, MemoryFormat? memory_format=None) -> Tensor
   variants: method
   device_guard: False
-  dispatch:
-    DefaultBackend: to 
+#  dispatch:
+#    DefaultBackend: to 
 
 - func: meshgrid(Tensor[] tensors) -> Tensor[]
 
