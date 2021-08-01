@@ -628,7 +628,7 @@ Ref<intrusive_ptr<External>> cell_from_tensor(const Tensor& t) {
 void CheckpointFallback(const c10::OperatorHandle& op, torch::jit::Stack* stack) {
   size_t before_size = stack->size();
   auto s = op.schema();
-  //std::cout << s << std::endl;
+  // std::cout << s << std::endl;
   size_t num_arg = s.arguments().size();
   // todo: use s.hasAnyAliasInfo() to figure out alias info instead of doing a runtime loop.
   std::vector<IValue> checkpoint_reversed_ivalue_in; // popping them from the jit stack and pushing them back will reverse stuff.
