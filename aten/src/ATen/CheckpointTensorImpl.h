@@ -24,7 +24,7 @@
 
 #define likely(x)      __builtin_expect(!!(x), 1)
 #define unlikely(x)    __builtin_expect(!!(x), 0)
-#define TORCH_CHECK(a, ...) // profile mode
+//#define TORCH_CHECK(a, ...) // profile mode
 
 // System Description:
 // Every Tensor is managed by a CheckpointTensor,
@@ -262,6 +262,7 @@ struct AliasPool : intrusive_ptr_target {
   void release_external() {
     --external_count;
     if (external_count == 0) {
+      // todo: is this debug code?
       if (lock_count > 0) {return;}
       TORCH_CHECK(lock_count == 0);
       if (memory > 0 && (!ecn) && head_remat) {
@@ -321,17 +322,20 @@ struct CheckpointTensorCell : intrusive_ptr_target {
     TORCH_CHECK(defined);
     return pool->memory;
   }
+  // todo: should remat return explicitly for safety?
   Tensor get() {
     if (! t) {
       TORCH_CHECK(remat);
       remat->remat();
+      std::cout << "remat!" << std::endl;
     }
     TORCH_CHECK(t);
-    TORCH_CHECK(! t->key_set().has(DispatchKey::CheckpointTensorId));
+    TORCH_CHECK(!t->key_set().has(DispatchKey::Checkpoint));
     pool->last_used_time = std::chrono::system_clock::now();
     return *t;
   }
   void pin() {
+    pool->lock();
     get();
     pool->head_remat.reset();
     remat.reset();
@@ -391,11 +395,7 @@ struct CheckpointTensorImpl : TensorImpl {
     TensorImpl(convert_key_set(ref->value->value->key_set()),
                ref->value->value->dtype(),
                ref->value->value->optional_device()),
-    ref(ref) {
-    if (key_set().has(DispatchKey::Autograd)) {
-      set_requires_grad(true);
-    }
-  }
+    ref(ref) { }
 
   explicit CheckpointTensorImpl(const intrusive_ptr<External>& e) :
     CheckpointTensorImpl(Ref<intrusive_ptr<External>>::make(e)) { }

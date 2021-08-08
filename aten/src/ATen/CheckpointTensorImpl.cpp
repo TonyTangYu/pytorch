@@ -190,7 +190,6 @@ void CheckpointPool::evict() {
           evict_idx = i;
         }
       }
-
       if (sample_tensors) {
         i += distrib(gen);
       } else {
@@ -487,9 +486,6 @@ void CheckpointTensorCell::fill(const Tensor& t) {
       defined = true;
       is_undefined_tensor = !t.defined();
       key_set_ = t.key_set();
-      if (t.requires_grad()) {
-        key_set_ = key_set_.add(DispatchKey::Autograd);
-      }
       dtype_ = t.dtype();
       optional_device_ = t.optional_device();
     }
@@ -507,7 +503,7 @@ intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const Va
 
 void CheckpointTensorImpl::shallow_copy_from(const c10::intrusive_ptr<TensorImpl>& impl) {
   STATS.track("CheckpointTensorCell::shallow_copy_from");
-  TORCH_CHECK(impl->key_set().has(DispatchKey::CheckpointTensorId));
+  TORCH_CHECK(impl->key_set().has(DispatchKey::Checkpoint));
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(impl.get());
   TORCH_CHECK(cpti != nullptr);
   ref->value = cpti->ref->value;
