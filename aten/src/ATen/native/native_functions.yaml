@@ -2157,8 +2157,17 @@
 - func: matmul(Tensor self, Tensor other) -> Tensor
   use_c10_dispatcher: full
   variants: function, method
+  dispatch:
+    CPU, CUDA: matmul
+    Checkpoint: checkpoint_matmul
 
 - func: matmul.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)
+  #use_c10_dispatcher: full
+  #variants: function, method
+  #dispatch:
+  #  CPU, CUDA: matmul_out
+  #  Checkpoint: checkpoint_matmul_out
+  # there is some pt bug which disallow the above code.
 
 - func: matrix_rank.tol(Tensor self, float tol, bool symmetric=False) -> Tensor
   use_c10_dispatcher: full
@@ -2906,6 +2915,7 @@
   dispatch:
     CPU: gelu_cpu
     CUDA: gelu_cuda
+    Checkpoint: checkpoint_gelu
 
 - func: gelu_backward(Tensor grad, Tensor self) -> Tensor
   use_c10_dispatcher: full
@@ -3426,6 +3436,9 @@
   use_c10_dispatcher: full
   variants: function, method
   device_guard: False
+  dispatch:
+    CPU, CUDA: transpose
+    Checkpoint: checkpoint_transpose
 
 - func: transpose.Dimname(Tensor(a) self, Dimname dim0, Dimname dim1) -> Tensor(a)
   variants: function, method
@@ -3441,6 +3454,9 @@
   use_c10_dispatcher: full
   variants: method
   device_guard: False
+  dispatch:
+    CPU, CUDA: transpose_
+    Checkpoint: checkpoint_transpose_
 
 - func: _mkldnn_transpose_(Tensor(a!) self, int dim0, int dim1) -> Tensor(a!)
   use_c10_dispatcher: full
@@ -4461,16 +4477,25 @@
   use_c10_dispatcher: full
   variants: method
   device_guard: False
+  dispatch:
+    CPU, CUDA: to
+    Checkpoint: checkpoint_to
 
 - func: to.dtype(Tensor self, ScalarType dtype, bool non_blocking=False, bool copy=False, MemoryFormat? memory_format=None) -> Tensor
   use_c10_dispatcher: full
   variants: method
   device_guard: False
+  dispatch:
+    CPU, CUDA: to
+    Checkpoint: checkpoint_to
 
 - func: to.other(Tensor self, Tensor other, bool non_blocking=False, bool copy=False, MemoryFormat? memory_format=None) -> Tensor
   use_c10_dispatcher: full
   variants: method
   device_guard: False
+  dispatch:
+    CPU, CUDA: to
+    Checkpoint: checkpoint_to
 
 - func: meshgrid(Tensor[] tensors) -> Tensor[]
   use_c10_dispatcher: full

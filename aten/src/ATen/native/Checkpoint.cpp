@@ -137,6 +137,30 @@ Tensor checkpoint_to(at::Tensor const& a, c10::TensorOptions const& b, bool c, b
   return CheckpointTensorImpl::make("to", rt, {a})[0];
 }
 
+Tensor checkpoint_to(at::Tensor const& a, at::Tensor const& b, bool c, bool d, c10::optional<c10::MemoryFormat> e) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {vec.at(0).to(b, c, d, e)};
+    };
+  return CheckpointTensorImpl::make("to", rt, {a})[0];
+}
+
+Tensor checkpoint_to(at::Tensor const& a, c10::ScalarType b, bool c, bool d, c10::optional<c10::MemoryFormat> e) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {vec.at(0).to(b, c, d, e)};
+    };
+  return CheckpointTensorImpl::make("to", rt, {a})[0];
+}
+
+Tensor checkpoint_to(at::Tensor const& a, c10::Device b, c10::ScalarType c, bool d, bool e, c10::optional<c10::MemoryFormat> f) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {vec.at(0).to(b, c, d, e, f)};
+    };
+  return CheckpointTensorImpl::make("to", rt, {a})[0];
+}
+
 Tensor checkpoint_div(const Tensor& a, const Tensor& b) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -701,6 +725,40 @@ Tensor checkpoint_sum_dim_IntList(const Tensor& a, c10::ArrayRef<long> b, bool c
       return {at::sum(vec.at(0), b_, c, d)};
     };
   return CheckpointTensorImpl::make("sum_dim_IntList", rt, {a})[0];
+}
+
+Tensor& checkpoint_transpose_(at::Tensor& a, long b, long c) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      Tensor a_ = vec.at(0);
+      a_.transpose_(b, c);
+    };
+  CheckpointTensorImpl::mutate("transpose_", mt, {a}, {0});
+  return a;
+}
+
+Tensor checkpoint_transpose(at::Tensor const& a, long b, long c) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::transpose(vec.at(0), b, c)};
+    };
+  return CheckpointTensorImpl::make("transpose", rt, {a})[0];
+}
+
+Tensor checkpoint_gelu(at::Tensor const& a) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::gelu(vec.at(0))};
+    };
+  return CheckpointTensorImpl::make("gelu", rt, {a})[0];
+}
+
+Tensor checkpoint_matmul(at::Tensor const& a, at::Tensor const& b) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::matmul(vec.at(0), vec.at(1))};
+    };
+    return CheckpointTensorImpl::make("matmul", rt, {a, b})[0];
 }
 
 Tensor checkpoint_threshold(const Tensor& a, c10::Scalar b, c10::Scalar c) {
