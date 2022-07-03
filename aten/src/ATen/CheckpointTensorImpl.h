@@ -164,6 +164,8 @@ struct CheckpointInfo {
   double cost(size_t memory, size_t staleness) const {
     TORCH_CHECK(memory > 0);
     TORCH_CHECK(staleness > 0);
+    // Filter Function
+    // return 1 / static_cast<double>(memory * staleness); 
     return compute_cost.count() / static_cast<double>(memory * staleness);
   }
   CheckpointInfo(duration_t compute_cost) :
@@ -368,9 +370,17 @@ struct External : intrusive_ptr_target {
 };
 
 inline DispatchKeySet convert_key_set(const DispatchKeySet& t) {
-  CHECK(!t.has(DispatchKey::Checkpoint));
-  auto ret = t.add(DispatchKey::Checkpoint);
-  return ret;
+  // std::cout << !t.has(DispatchKey::Checkpoint) << std::endl;
+  // CHECK(!t.has(DispatchKey::Checkpoint));
+  // auto ret = t.add(DispatchKey::Checkpoint);
+  if (!t.has(DispatchKey::Checkpoint)) {
+    auto ret = t.add(DispatchKey::Checkpoint);
+    return ret;
+  }
+  else {
+    auto ret = t;
+    return ret;
+  }
 }
 
 struct CheckpointTensorImpl : TensorImpl {
