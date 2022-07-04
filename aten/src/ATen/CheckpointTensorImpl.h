@@ -165,8 +165,8 @@ struct CheckpointInfo {
     TORCH_CHECK(memory > 0);
     TORCH_CHECK(staleness > 0);
     // Filter Function
-    // return 1 / static_cast<double>(memory * staleness); 
-    return compute_cost.count() / static_cast<double>(memory * staleness);
+    return 1 / static_cast<double>(memory * staleness); 
+    // return compute_cost.count() / static_cast<double>(memory * staleness);
   }
   CheckpointInfo(duration_t compute_cost) :
     compute_cost(compute_cost) {
@@ -196,6 +196,8 @@ struct Rematerializer : intrusive_ptr_target {
   strongs inputs;
   weaks outputs;
   duration_t compute_cost;
+  // add for reload
+  duration_t swap_cost; 
   // when some output in here get evicted, they should belong to this ecn.
   // a rematerializer have to track this,
   // because when multiple output of a rematerializer get evicted,
@@ -370,7 +372,6 @@ struct External : intrusive_ptr_target {
 };
 
 inline DispatchKeySet convert_key_set(const DispatchKeySet& t) {
-  // std::cout << !t.has(DispatchKey::Checkpoint) << std::endl;
   // CHECK(!t.has(DispatchKey::Checkpoint));
   // auto ret = t.add(DispatchKey::Checkpoint);
   if (!t.has(DispatchKey::Checkpoint)) {
