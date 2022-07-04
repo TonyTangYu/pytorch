@@ -160,6 +160,7 @@ using time_t = std::chrono::time_point<std::chrono::system_clock>;
 using duration_t = std::chrono::system_clock::duration;
 struct CheckpointInfo {
   duration_t compute_cost;
+  double bandwidth = 0.5*64*1024*1024*1024/1000000;
   // @ZACH: Floating Point instability?
   double cost(size_t memory, size_t staleness) const {
     TORCH_CHECK(memory > 0);
@@ -167,6 +168,16 @@ struct CheckpointInfo {
     // Filter Function
     return 1 / static_cast<double>(memory * staleness); 
     // return compute_cost.count() / static_cast<double>(memory * staleness);
+  }
+  double swap_cost_(size_t memory) const {
+    TORCH_CHECK(memory > 0);
+    return static_cast<double>(memory) / bandwidth;
+  }
+  double decision(size_t memory, size_t staleness) const {
+    TORCH_CHECK(memory > 0);
+    TORCH_CHECK(staleness > 0);
+    double swap_cost = static_cast<double>(memory) / bandwidth;
+    return (2 * swap_cost) / compute_cost.count();
   }
   CheckpointInfo(duration_t compute_cost) :
     compute_cost(compute_cost) {
@@ -260,6 +271,7 @@ struct AliasPool : intrusive_ptr_target {
   ecn_ptr ecn;
   double cost(time_t current_time);
   void evict();
+  void offload();
   void register_external() {
     ++external_count;
   }
