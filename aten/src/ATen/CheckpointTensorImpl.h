@@ -160,14 +160,14 @@ using time_t = std::chrono::time_point<std::chrono::system_clock>;
 using duration_t = std::chrono::system_clock::duration;
 struct CheckpointInfo {
   duration_t compute_cost;
-  double bandwidth = 0.5*64*1024*1024*1024/1000000;
+  double bandwidth = 0.5*32*1024*1024*1024/1000000;
   // @ZACH: Floating Point instability?
   double cost(size_t memory, size_t staleness) const {
     TORCH_CHECK(memory > 0);
     TORCH_CHECK(staleness > 0);
     // Filter Function
-    return 1 / static_cast<double>(memory * staleness); 
-    // return compute_cost.count() / static_cast<double>(memory * staleness);
+    // return 1 / static_cast<double>(memory * staleness); 
+    return compute_cost.count() / static_cast<double>(memory * staleness);
   }
   double swap_cost_(size_t memory) const {
     TORCH_CHECK(memory > 0);
@@ -228,6 +228,7 @@ struct Rematerializer : intrusive_ptr_target {
     outputs.clear();
   }
   void remat();
+  void reload();
   ecn_ptr get_ecn();
   CheckpointInfo get_cpi();
 };
@@ -259,6 +260,8 @@ struct AliasPool : intrusive_ptr_target {
   }
   // if it is not evictable it must not be evicted.
   bool is_evicted = false;
+  bool is_offloaded = false;
+  bool onGPU = true;
   size_t memory;
   time_t last_used_time;
   // An aliaspool cant register itself to the checkpointpool - you have to do it yourself.
@@ -289,6 +292,7 @@ struct AliasPool : intrusive_ptr_target {
   // have to check so, because when we rematerialize a single tensor in an aliaspool,
   // we will set it to non-evicted, and when we rematerialize it's tensor they will also reset this.
   void set_not_evicted(const intrusive_ptr<AliasPool>& self);
+  void set_not_offloaded(const intrusive_ptr<AliasPool>& self);
   void release_resources() final {
     tensors.clear();
     neighbors.clear();
@@ -300,6 +304,7 @@ struct CheckpointTensorCell : intrusive_ptr_target {
   std::unique_ptr<Tensor> t;
   bool defined = false;
   bool is_undefined_tensor;
+  double swap_cost;
   DispatchKeySet key_set_;
   DispatchKeySet key_set() const {
     TORCH_CHECK(defined);
@@ -320,6 +325,10 @@ struct CheckpointTensorCell : intrusive_ptr_target {
   intrusive_ptr<AliasPool> pool;
   intrusive_ptr<Rematerializer> remat;
   void evict() {
+    TORCH_CHECK(remat);
+    t.reset();
+  }
+  void offload() {
     TORCH_CHECK(remat);
     t.reset();
   }

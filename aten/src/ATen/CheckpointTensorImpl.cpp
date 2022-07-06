@@ -1,6 +1,11 @@
 #include <ATen/CheckpointTensorImpl.h>
 #include <ATen/Logger.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <ATen/cuda/CUDAEvent.h>
 #include <c10/cuda/CUDACachingAllocator.h>
+#include <c10/cuda/CUDAStream.h>
+#include <c10/core/Allocator.h>
+
 
 #include <chrono>
 #include <string>
@@ -116,6 +121,7 @@ inline size_t memory(const Tensor& t) {
   memory_sum += res;
   memory_max = std::max(memory_max, res);
   memory_count += 1;
+  // std::cout << "memory count: " << memory_sum << std::endl;
   return res;
 }
 
@@ -126,8 +132,8 @@ Timer::~Timer() {
   STATS.timers.push_back(stats);
 }
 
-bool use_log_ = false;
-bool use_profile_ = false;
+bool use_log_ = true;
+bool use_profile_ = true;
 long base_compute_time_ = 0;
 long remat_compute_time_ = 0;
 long search_time_ = 0;
@@ -149,6 +155,7 @@ long current_memory() {
 void CheckpointPool::auto_evict() {
   STATS.track("CheckpointPool::auto_evict");
   if (has_memory_budget) {
+    // std::cout << "current memory is: " << current_memory() << std::endl;
     while (current_memory() > memory_budget) {
       evict();
     }
@@ -162,7 +169,7 @@ void CheckpointPool::evict() {
   // shrunk: either something has been evicted or the pools have gotten smaller
   bool shrunk = false;
   int evict_idx = -1;
-  double evict_cost = INFINITY;
+  double filter_score = INFINITY;
   time_t current_time = std::chrono::system_clock::now();
   auto remove_from_aps = [&](size_t i) {
                            aps[i] = aps[aps.size() - 1];
@@ -185,8 +192,9 @@ void CheckpointPool::evict() {
     else {
       if (ap_strong->evictable()) {
         double cost = ap_strong->cost(current_time);
-        if (cost < evict_cost) {
-          evict_cost = cost;
+        std::cout << "current tensor filter score: " << cost << std::endl;
+        if (cost < filter_score) {
+          filter_score = cost;
           evict_idx = i;
         }
       }
@@ -205,6 +213,12 @@ void CheckpointPool::evict() {
                             auto ap_strong = aps[idx].lock();
                             TORCH_CHECK(ap_strong.defined());
                             ap_strong->evict();
+                            remove_from_aps(evict_idx);
+                          };
+    auto offload_from_idx = [&](size_t idx){
+                            auto ap_strong = aps[idx].lock();
+                            TORCH_CHECK(ap_strong.defined());
+                            ap_strong->offload();
                             remove_from_aps(evict_idx);
                           };
     evict_from_idx(evict_idx);
@@ -292,6 +306,7 @@ void unset_memory_budget() {
 }
 
 void set_memory_budget(long budget) {
+  std::cout << "memory budget: " << budget << std::endl;
   pool.memory_budget = budget;
   pool.has_memory_budget = true;
 }
@@ -384,9 +399,47 @@ void AliasPool::evict() {
   TORCH_CHECK(lock_count == 0);
   TORCH_CHECK(!is_evicted);
   is_evicted = true;
+  onGPU = false;
   for (const weak& w : tensors) {
     if (auto cell = w.lock()) {
       cell->evict();
+    }
+  }
+}
+
+void AliasPool::offload() {
+  STATS.track("AliasPool::offload");
+  TORCH_CHECK(!ecn);
+  ecn = head_remat->get_ecn();
+  auto ecns = neighbor_ecn();
+  for (const auto& necn : ecns) {
+    merge<CheckpointInfo>(merge_cpi, ecn, necn);
+  }
+  TORCH_CHECK(memory > 0);
+  TORCH_CHECK(lock_count == 0);
+  TORCH_CHECK(!is_offloaded);
+  is_offloaded = true;
+  onGPU = false;
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
+  cudaMemcpyKind kind = cudaMemcpyDeviceToHost;
+  c10::Allocator* allocator = at::getCPUAllocator();
+  // struct use_byte_size_t {};
+  // use_byte_size_t use_byte_size;
+  for (const weak& w : tensors) {
+    if (auto cell = w.lock()) {
+      auto& storage = cell->t->storage();
+      size_t res =  storage.nbytes();
+      // auto dtype_ = cell->t->dtype();
+      time_t pre = std::chrono::system_clock::now();
+      auto cpuStorage = std::make_shared<Storage>(Storage::use_byte_size_t(), res, allocator, false);
+      cudaMemcpyAsync(cpuStorage->data_ptr().get(), storage.data_ptr().get(), res, kind, stream);
+      time_t post = std::chrono::system_clock::now();
+      cell->swap_cost = (post - pre).count();
+      std::cout << "offload finished " << std::endl;
+      // test
+      // float a[10000000] = {0.9};
+      // auto testCpu = std::make_shared<Storage>(Storage::use_byte_size_t(), sizeof(a), allocator, false);
+      // cudaMemcpyAsync(testCpu->data_ptr.get(), )
     }
   }
 }
@@ -468,6 +521,20 @@ void AliasPool::set_not_evicted(const intrusive_ptr<AliasPool>& self) {
   if (unlikely(is_evicted)) {
     STATS.track("AliasPool::set_not_evicted(inside)");
     is_evicted = false;
+    if (ecn) {
+      TORCH_CHECK(head_remat);
+      auto cpi = get_t(ecn);
+      update_t(ecn, CheckpointInfo(cpi.compute_cost - head_remat->compute_cost));
+      ecn.reset();
+    }
+    pool.add(self);
+  }
+}
+
+void AliasPool::set_not_offloaded(const intrusive_ptr<AliasPool>& self) {
+  if (unlikely(is_offloaded)) {
+    STATS.track("AliasPool::set_not_offloaded(inside)");
+    is_offloaded = false;
     if (ecn) {
       TORCH_CHECK(head_remat);
       auto cpi = get_t(ecn);
