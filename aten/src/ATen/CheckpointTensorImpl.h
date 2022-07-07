@@ -160,20 +160,25 @@ using time_t = std::chrono::time_point<std::chrono::system_clock>;
 using duration_t = std::chrono::system_clock::duration;
 struct CheckpointInfo {
   duration_t compute_cost;
-  double bandwidth = 0.5*32*1024*1024*1024/1000000;
+  double bandwidth = 0.35*32*1024*1024*1024/1000000;
   // @ZACH: Floating Point instability?
   double cost(size_t memory, size_t staleness) const {
     TORCH_CHECK(memory > 0);
     TORCH_CHECK(staleness > 0);
     // Filter Function
-    // return 1 / static_cast<double>(memory * staleness); 
+    return 1 / static_cast<double>(memory * staleness); 
+    // return compute_cost.count() / static_cast<double>(memory * staleness);
+  }
+  double compute_cost_func(size_t memory, size_t staleness) const {
+    TORCH_CHECK(memory > 0);
+    TORCH_CHECK(staleness > 0);
     return compute_cost.count() / static_cast<double>(memory * staleness);
   }
   double swap_cost_(size_t memory) const {
     TORCH_CHECK(memory > 0);
     return static_cast<double>(memory) / bandwidth;
   }
-  double decision(size_t memory, size_t staleness) const {
+  double fake_decision(size_t memory, size_t staleness) const {
     TORCH_CHECK(memory > 0);
     TORCH_CHECK(staleness > 0);
     double swap_cost = static_cast<double>(memory) / bandwidth;
@@ -264,6 +269,8 @@ struct AliasPool : intrusive_ptr_target {
   bool onGPU = true;
   size_t memory;
   time_t last_used_time;
+  double swap_cost;
+  std::shared_ptr<Storage> cpuStorage;
   // An aliaspool cant register itself to the checkpointpool - you have to do it yourself.
   AliasPool(const Unsafe&, intrusive_ptr<Rematerializer> head_remat, size_t memory) :
     head_remat(head_remat),
@@ -273,6 +280,8 @@ struct AliasPool : intrusive_ptr_target {
   // if it is evicted, then hold the evicted tensor group.
   ecn_ptr ecn;
   double cost(time_t current_time);
+  double compute_cost_func(time_t current_time);
+  double decision_func(time_t current_time);
   void evict();
   void offload();
   void register_external() {
@@ -304,7 +313,12 @@ struct CheckpointTensorCell : intrusive_ptr_target {
   std::unique_ptr<Tensor> t;
   bool defined = false;
   bool is_undefined_tensor;
+  bool evicted = false;
+  bool offloaded = false;
+  bool onGPU = true;
+  double compute_cost;
   double swap_cost;
+  std::shared_ptr<Storage> cpuStorage;
   DispatchKeySet key_set_;
   DispatchKeySet key_set() const {
     TORCH_CHECK(defined);

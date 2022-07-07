@@ -192,7 +192,6 @@ void CheckpointPool::evict() {
     else {
       if (ap_strong->evictable()) {
         double cost = ap_strong->cost(current_time);
-        std::cout << "current tensor filter score: " << cost << std::endl;
         if (cost < filter_score) {
           filter_score = cost;
           evict_idx = i;
@@ -209,6 +208,16 @@ void CheckpointPool::evict() {
   if (evict_idx == -1) {
     TORCH_CHECK(shrunk);
   } else {
+    auto release_aps = aps[evict_idx].lock();
+    double real_decision;
+    if (release_aps->is_offloaded) {
+      double _computed_cost = release_aps->cost(current_time);
+      double _swap_cost = release_aps->swap_cost;
+      real_decision = _swap_cost / _computed_cost;
+    } else {
+      real_decision = release_aps->decision_func(current_time);
+    }
+    std::cout << "real decision: " << real_decision << std::endl;
     auto evict_from_idx = [&](size_t idx) {
                             auto ap_strong = aps[idx].lock();
                             TORCH_CHECK(ap_strong.defined());
@@ -221,7 +230,8 @@ void CheckpointPool::evict() {
                             ap_strong->offload();
                             remove_from_aps(evict_idx);
                           };
-    evict_from_idx(evict_idx);
+    offload_from_idx(evict_idx);
+    // evict_from_idx(evict_idx);
   }
   time_t post = std::chrono::system_clock::now();
   search_time_ += (post - pre).count();
@@ -418,11 +428,11 @@ void AliasPool::offload() {
   TORCH_CHECK(memory > 0);
   TORCH_CHECK(lock_count == 0);
   TORCH_CHECK(!is_offloaded);
-  is_offloaded = true;
-  onGPU = false;
   at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
   cudaMemcpyKind kind = cudaMemcpyDeviceToHost;
   c10::Allocator* allocator = at::getCPUAllocator();
+  onGPU = false;
+  is_offloaded = true;
   // struct use_byte_size_t {};
   // use_byte_size_t use_byte_size;
   for (const weak& w : tensors) {
@@ -431,10 +441,13 @@ void AliasPool::offload() {
       size_t res =  storage.nbytes();
       // auto dtype_ = cell->t->dtype();
       time_t pre = std::chrono::system_clock::now();
-      auto cpuStorage = std::make_shared<Storage>(Storage::use_byte_size_t(), res, allocator, false);
-      cudaMemcpyAsync(cpuStorage->data_ptr().get(), storage.data_ptr().get(), res, kind, stream);
+      cell->cpuStorage = std::make_shared<Storage>(Storage::use_byte_size_t(), res, allocator, false);
+      cudaMemcpyAsync(cell->cpuStorage->data_ptr().get(), storage.data_ptr().get(), res, kind, stream);
       time_t post = std::chrono::system_clock::now();
       cell->swap_cost = (post - pre).count();
+      cell->onGPU = false;
+      cell->offloaded = true;
+      // std::cout << cpuStorage->data() << std::endl;
       std::cout << "offload finished " << std::endl;
       // test
       // float a[10000000] = {0.9};
@@ -454,6 +467,31 @@ double AliasPool::cost(time_t current_time) {
   auto ret = cpi.cost(memory, (current_time - last_used_time).count());
   time_t post = std::chrono::system_clock::now();
   cost_time_ += (post - pre).count();
+  return ret;
+}
+
+double AliasPool::compute_cost_func(time_t current_time) {
+  time_t pre = std::chrono::system_clock::now();
+  auto cpi = head_remat->get_cpi();
+  auto ecns = neighbor_ecn();
+  for (const auto& necn : ecns) {
+    cpi = merge_cpi(cpi, get_t(necn));
+  }
+  auto ret = cpi.compute_cost_func(memory, (current_time - last_used_time).count());
+  time_t post = std::chrono::system_clock::now();
+  cost_time_ += (post - pre).count();
+  return ret;
+}
+
+double AliasPool::decision_func(time_t current_time) {
+  time_t pre = std::chrono::system_clock::now();
+  auto cpi = head_remat->get_cpi();
+  auto ecns = neighbor_ecn();
+  for (const auto& necn : ecns) {
+    cpi = merge_cpi(cpi, get_t(necn));
+  }
+  auto ret = cpi.fake_decision(memory, (current_time - last_used_time).count());
+  time_t post = std::chrono::system_clock::now();
   return ret;
 }
 
@@ -483,6 +521,18 @@ void Rematerializer::remat() {
   for (const strong& s : inputs) {
     s->pool->unlock();
   }
+}
+
+void reload(strong& input) {
+  input->onGPU = true;
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
+  cudaMemcpyKind kind = cudaMemcpyHostToDevice;
+  size_t res = input->cpuStorage->nbytes();
+  c10::Allocator* allocator = at::cuda::getCUDADeviceAllocator();
+  auto ptr = std::make_shared<Storage>(Storage::use_byte_size_t(), res, allocator, false);
+  cudaMemcpyAsync(ptr->data_ptr().get(), input->cpuStorage->data_ptr().get(), res, kind, stream);
+  input->cpuStorage.reset();
+  std::cout << "Reload finished " << std::endl;
 }
 
 ecn_ptr Rematerializer::get_ecn() {
