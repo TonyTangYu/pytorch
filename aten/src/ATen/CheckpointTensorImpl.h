@@ -261,6 +261,7 @@ struct AliasPool : intrusive_ptr_target {
   }
   intrusive_ptr<Rematerializer> head_remat;
   bool evictable() const {
+    std::cout << "in evicable " << (lock_count == 0) << " ! head_remat " << (!head_remat) << std::endl;
     return lock_count == 0 && head_remat;
   }
   // if it is not evictable it must not be evicted.
@@ -319,6 +320,7 @@ struct CheckpointTensorCell : intrusive_ptr_target {
   double compute_cost;
   double swap_cost;
   std::shared_ptr<Storage> cpuStorage;
+  Tensor cpuTensor;
   DispatchKeySet key_set_;
   DispatchKeySet key_set() const {
     TORCH_CHECK(defined);

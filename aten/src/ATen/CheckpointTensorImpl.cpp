@@ -121,7 +121,6 @@ inline size_t memory(const Tensor& t) {
   memory_sum += res;
   memory_max = std::max(memory_max, res);
   memory_count += 1;
-  // std::cout << "memory count: " << memory_sum << std::endl;
   return res;
 }
 
@@ -155,7 +154,6 @@ long current_memory() {
 void CheckpointPool::auto_evict() {
   STATS.track("CheckpointPool::auto_evict");
   if (has_memory_budget) {
-    // std::cout << "current memory is: " << current_memory() << std::endl;
     while (current_memory() > memory_budget) {
       evict();
     }
@@ -177,6 +175,7 @@ void CheckpointPool::evict() {
                          };
   std::uniform_int_distribution<> distrib(1, 1 * std::max(1, static_cast<int>(std::sqrt(aps.size()))));
   // sampling a random independent subset of all evictable tensors to find the cheapest tensor to evict.
+  std::cout << "aps size: " << aps.size() << std::endl;
   for (size_t i = 0; i < aps.size();) {
     auto cannot_evict = [&]() {
                           shrunk = true;
@@ -187,6 +186,8 @@ void CheckpointPool::evict() {
       cannot_evict();
     }
     else if (ap_strong->ecn) {
+      cannot_evict();
+    } if (ap_strong->is_offloaded && !ap_strong->onGPU) {
       cannot_evict();
     }
     else {
@@ -205,6 +206,7 @@ void CheckpointPool::evict() {
       }
     }
   }
+  std::cout << "evict idx " << evict_idx << std::endl;
   if (evict_idx == -1) {
     TORCH_CHECK(shrunk);
   } else {
@@ -217,7 +219,6 @@ void CheckpointPool::evict() {
     } else {
       real_decision = release_aps->decision_func(current_time);
     }
-    std::cout << "real decision: " << real_decision << std::endl;
     auto evict_from_idx = [&](size_t idx) {
                             auto ap_strong = aps[idx].lock();
                             TORCH_CHECK(ap_strong.defined());
@@ -230,8 +231,12 @@ void CheckpointPool::evict() {
                             ap_strong->offload();
                             remove_from_aps(evict_idx);
                           };
-    offload_from_idx(evict_idx);
-    // evict_from_idx(evict_idx);
+    if (real_decision > 1) {
+      evict_from_idx(evict_idx);
+    } else {
+      // evict_from_idx(evict_idx);
+      offload_from_idx(evict_idx);
+    }
   }
   time_t post = std::chrono::system_clock::now();
   search_time_ += (post - pre).count();
@@ -366,18 +371,46 @@ long loop_time() {
 
 }
 
+void reload(strong& input) {
+  input->onGPU = true;
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
+  cudaMemcpyKind kind = cudaMemcpyHostToDevice;
+  // size_t res = input->cpuStorage->nbytes();
+  c10::Allocator* allocator = at::cuda::getCUDADeviceAllocator();
+  // auto ptr = std::make_shared<Storage>(Storage::use_byte_size_t(), res, allocator, false);
+  // cudaMemcpyAsync(ptr->data_ptr().get(), input->cpuStorage->data_ptr().get(), res, kind, stream);
+  Tensor gpuTensor = input->cpuTensor.to(DeviceType::CUDA);
+  input->t = std::make_unique<Tensor>(gpuTensor.detach());
+  // how to set tensor device and on undefined tensor error
+  // std::cout << "Storage type: " << gpuTensor.device() << std::endl;
+  // input->cpuStorage.reset();
+  std::cout << "Reload finished " << std::endl;
+  // return gpuTensor;
+}
+
 [[inline]]
 Tensor uncheckpoint(const strong& input) {
   return input->get();
 }
 
-Tensors uncheckpoint(const strongs& inputs) {
+// Tensors uncheckpoint(const strongs& inputs) {
+Tensors uncheckpoint(strongs& inputs) {
   STATS.track("uncheckpoint");
   Tensors ret;
   ret.reserve(inputs.size());
-  for (const strong& input : inputs) {
+  for (strong& input : inputs) {
     // inlined manually
-    ret.push_back(input->get());
+    if (!input->onGPU && input->offloaded) {
+      reload(input);
+      ret.push_back(input->get());
+    }
+    else if (!input->onGPU && input->evicted) {
+      ret.push_back(input->get());
+    } else {
+      ret.push_back(input->get());
+    }
+    // reload(input);
+    // ret.push_back(input->get());
   }
   return ret;
 };
@@ -413,6 +446,8 @@ void AliasPool::evict() {
   for (const weak& w : tensors) {
     if (auto cell = w.lock()) {
       cell->evict();
+      cell->onGPU = false;
+      cell->evicted = true;
     }
   }
 }
@@ -433,26 +468,20 @@ void AliasPool::offload() {
   c10::Allocator* allocator = at::getCPUAllocator();
   onGPU = false;
   is_offloaded = true;
-  // struct use_byte_size_t {};
-  // use_byte_size_t use_byte_size;
   for (const weak& w : tensors) {
     if (auto cell = w.lock()) {
       auto& storage = cell->t->storage();
       size_t res =  storage.nbytes();
       // auto dtype_ = cell->t->dtype();
       time_t pre = std::chrono::system_clock::now();
-      cell->cpuStorage = std::make_shared<Storage>(Storage::use_byte_size_t(), res, allocator, false);
-      cudaMemcpyAsync(cell->cpuStorage->data_ptr().get(), storage.data_ptr().get(), res, kind, stream);
+      // cell->cpuStorage = std::make_shared<Storage>(Storage::use_byte_size_t(), res, allocator, false);
+      // cudaMemcpyAsync(cell->cpuStorage->data_ptr().get(), storage.data_ptr().get(), res, kind, stream);
+      cell->cpuTensor = cell->t->to(DeviceType::CPU);
       time_t post = std::chrono::system_clock::now();
+      cell->t->reset();
       cell->swap_cost = (post - pre).count();
       cell->onGPU = false;
       cell->offloaded = true;
-      // std::cout << cpuStorage->data() << std::endl;
-      std::cout << "offload finished " << std::endl;
-      // test
-      // float a[10000000] = {0.9};
-      // auto testCpu = std::make_shared<Storage>(Storage::use_byte_size_t(), sizeof(a), allocator, false);
-      // cudaMemcpyAsync(testCpu->data_ptr.get(), )
     }
   }
 }
@@ -521,18 +550,6 @@ void Rematerializer::remat() {
   for (const strong& s : inputs) {
     s->pool->unlock();
   }
-}
-
-void reload(strong& input) {
-  input->onGPU = true;
-  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
-  cudaMemcpyKind kind = cudaMemcpyHostToDevice;
-  size_t res = input->cpuStorage->nbytes();
-  c10::Allocator* allocator = at::cuda::getCUDADeviceAllocator();
-  auto ptr = std::make_shared<Storage>(Storage::use_byte_size_t(), res, allocator, false);
-  cudaMemcpyAsync(ptr->data_ptr().get(), input->cpuStorage->data_ptr().get(), res, kind, stream);
-  input->cpuStorage.reset();
-  std::cout << "Reload finished " << std::endl;
 }
 
 ecn_ptr Rematerializer::get_ecn() {
@@ -672,7 +689,7 @@ void add_neighbor(const strong& l, const strong& r) {
 // however, we have to stitch the two vectors together to pass it in remat.
 // the size_t in constants decide the location to stitch them in, while input_values fill in the rest.
 MakeRawResult make_raw(const rematerialize_function_t& remat_f,
-                       const strongs& inputs) {
+                      strongs& inputs) {
   STATS.track("make_raw");
   for (const strong& s : inputs) {
     s->pool->lock();
@@ -680,6 +697,7 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
   Tensors raw_inputs = uncheckpoint(inputs);
   time_t pre = std::chrono::system_clock::now();
   auto raw_outputs = remat_f(raw_inputs);
+
   time_t post = std::chrono::system_clock::now();
   pool.auto_evict();
   base_compute_time_ += (post - pre).count();
@@ -750,7 +768,6 @@ Tensors CheckpointTensorImpl::make(const std::string& name,
   }
 
   auto ret = make_raw(remat, input_values);
-
   Tensors tensors;
   tensors.reserve(ret.outputs.size());
 
