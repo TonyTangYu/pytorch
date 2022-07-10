@@ -389,6 +389,7 @@ void CheckpointTensorCell::reload() {
   // auto ptr = std::make_shared<Storage>(Storage::use_byte_size_t(), res, allocator, false);
   // cudaMemcpyAsync(ptr->data_ptr().get(), input->cpuStorage->data_ptr().get(), res, kind, stream);
   Tensor gpuTensor = cpuTensor.to(DeviceType::CUDA);
+  cpuTensor.reset();
   t = std::make_unique<Tensor>(gpuTensor.detach());
   at::pool.aps.push_back(weak_intrusive_ptr<AliasPool>(pool));
   // how to set tensor device and on undefined tensor error
