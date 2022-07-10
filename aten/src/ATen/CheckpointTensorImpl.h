@@ -261,7 +261,6 @@ struct AliasPool : intrusive_ptr_target {
   }
   intrusive_ptr<Rematerializer> head_remat;
   bool evictable() const {
-    std::cout << "in evicable " << (lock_count == 0) << " ! head_remat " << (!head_remat) << std::endl;
     return lock_count == 0 && head_remat;
   }
   // if it is not evictable it must not be evicted.
@@ -348,6 +347,7 @@ struct CheckpointTensorCell : intrusive_ptr_target {
     TORCH_CHECK(remat);
     t.reset();
   }
+  void reload();
   void fill(const Tensor& t);
   explicit CheckpointTensorCell(const Tensor& t, const intrusive_ptr<AliasPool>& pool) : pool(pool) {
     fill(t);
@@ -492,7 +492,7 @@ struct CheckpointPool {
   std::random_device rd;
   std::mt19937 gen = std::mt19937(rd());
   // whether to take a square-root sample of the pool during an eviction loop
-  bool sample_tensors = true;
+  bool sample_tensors = false;
   // ignore tensors < 1% of the average tensor size
   bool ignore_small_tensors = true;
   bool has_memory_budget = false;

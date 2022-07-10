@@ -155,6 +155,7 @@ void CheckpointPool::auto_evict() {
   STATS.track("CheckpointPool::auto_evict");
   if (has_memory_budget) {
     while (current_memory() > memory_budget) {
+      std::cout << "current memory is: " << current_memory() << std::endl;
       evict();
     }
   }
@@ -187,9 +188,10 @@ void CheckpointPool::evict() {
     }
     else if (ap_strong->ecn) {
       cannot_evict();
-    } if (ap_strong->is_offloaded && !ap_strong->onGPU) {
+    } 
+    else if (ap_strong->is_offloaded && !ap_strong->onGPU) {
       cannot_evict();
-    }
+    } 
     else {
       if (ap_strong->evictable()) {
         double cost = ap_strong->cost(current_time);
@@ -212,13 +214,14 @@ void CheckpointPool::evict() {
   } else {
     auto release_aps = aps[evict_idx].lock();
     double real_decision;
-    if (release_aps->is_offloaded) {
+    if (release_aps->is_offloaded && release_aps->onGPU) {
       double _computed_cost = release_aps->cost(current_time);
       double _swap_cost = release_aps->swap_cost;
       real_decision = _swap_cost / _computed_cost;
     } else {
       real_decision = release_aps->decision_func(current_time);
     }
+    std::cout << "decision is  " << real_decision << std::endl;
     auto evict_from_idx = [&](size_t idx) {
                             auto ap_strong = aps[idx].lock();
                             TORCH_CHECK(ap_strong.defined());
@@ -233,9 +236,14 @@ void CheckpointPool::evict() {
                           };
     if (real_decision > 1) {
       evict_from_idx(evict_idx);
+      std::cout << "evict aaaaa" << std::endl;
+      // offload_from_idx(evict_idx);
     } else {
       // evict_from_idx(evict_idx);
       offload_from_idx(evict_idx);
+      // auto ap_strong = aps[evict_idx].lock();
+      // TORCH_CHECK(ap_strong.defined());
+      // remove_from_aps(evict_idx);
     }
   }
   time_t post = std::chrono::system_clock::now();
@@ -371,18 +379,19 @@ long loop_time() {
 
 }
 
-void reload(strong& input) {
-  input->onGPU = true;
+void CheckpointTensorCell::reload() {
+  STATS.track("AliasPool::reload");
+  onGPU = true;
   at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
   cudaMemcpyKind kind = cudaMemcpyHostToDevice;
   // size_t res = input->cpuStorage->nbytes();
   c10::Allocator* allocator = at::cuda::getCUDADeviceAllocator();
   // auto ptr = std::make_shared<Storage>(Storage::use_byte_size_t(), res, allocator, false);
   // cudaMemcpyAsync(ptr->data_ptr().get(), input->cpuStorage->data_ptr().get(), res, kind, stream);
-  Tensor gpuTensor = input->cpuTensor.to(DeviceType::CUDA);
-  input->t = std::make_unique<Tensor>(gpuTensor.detach());
+  Tensor gpuTensor = cpuTensor.to(DeviceType::CUDA);
+  t = std::make_unique<Tensor>(gpuTensor.detach());
+  at::pool.aps.push_back(weak_intrusive_ptr<AliasPool>(pool));
   // how to set tensor device and on undefined tensor error
-  // std::cout << "Storage type: " << gpuTensor.device() << std::endl;
   // input->cpuStorage.reset();
   std::cout << "Reload finished " << std::endl;
   // return gpuTensor;
@@ -401,7 +410,7 @@ Tensors uncheckpoint(strongs& inputs) {
   for (strong& input : inputs) {
     // inlined manually
     if (!input->onGPU && input->offloaded) {
-      reload(input);
+      input->reload();
       ret.push_back(input->get());
     }
     else if (!input->onGPU && input->evicted) {
@@ -454,12 +463,12 @@ void AliasPool::evict() {
 
 void AliasPool::offload() {
   STATS.track("AliasPool::offload");
-  TORCH_CHECK(!ecn);
-  ecn = head_remat->get_ecn();
-  auto ecns = neighbor_ecn();
-  for (const auto& necn : ecns) {
-    merge<CheckpointInfo>(merge_cpi, ecn, necn);
-  }
+  // TORCH_CHECK(!ecn);
+  // ecn = head_remat->get_ecn();
+  // auto ecns = neighbor_ecn();
+  // for (const auto& necn : ecns) {
+  //   merge<CheckpointInfo>(merge_cpi, ecn, necn);
+  // }
   TORCH_CHECK(memory > 0);
   TORCH_CHECK(lock_count == 0);
   TORCH_CHECK(!is_offloaded);
@@ -484,6 +493,7 @@ void AliasPool::offload() {
       cell->offloaded = true;
     }
   }
+  std::cout << "offload finished  " << std::endl;
 }
 
 double AliasPool::cost(time_t current_time) {
