@@ -155,7 +155,7 @@ void CheckpointPool::auto_evict() {
   STATS.track("CheckpointPool::auto_evict");
   if (has_memory_budget) {
     while (current_memory() > memory_budget) {
-      std::cout << "current memory is: " << current_memory() << std::endl;
+      // std::cout << "current memory is: " << current_memory() << std::endl;
       evict();
     }
   }
@@ -176,7 +176,7 @@ void CheckpointPool::evict() {
                          };
   std::uniform_int_distribution<> distrib(1, 1 * std::max(1, static_cast<int>(std::sqrt(aps.size()))));
   // sampling a random independent subset of all evictable tensors to find the cheapest tensor to evict.
-  std::cout << "aps size: " << aps.size() << std::endl;
+  // std::cout << "aps size: " << aps.size() << std::endl;
   for (size_t i = 0; i < aps.size();) {
     auto cannot_evict = [&]() {
                           shrunk = true;
@@ -208,7 +208,7 @@ void CheckpointPool::evict() {
       }
     }
   }
-  std::cout << "evict idx " << evict_idx << std::endl;
+  // std::cout << "evict idx " << evict_idx << std::endl;
   if (evict_idx == -1) {
     TORCH_CHECK(shrunk);
   } else {
@@ -221,7 +221,7 @@ void CheckpointPool::evict() {
     } else {
       real_decision = release_aps->decision_func(current_time);
     }
-    std::cout << "decision is  " << real_decision << std::endl;
+    // std::cout << "decision is  " << real_decision << std::endl;
     auto evict_from_idx = [&](size_t idx) {
                             auto ap_strong = aps[idx].lock();
                             TORCH_CHECK(ap_strong.defined());
@@ -236,7 +236,7 @@ void CheckpointPool::evict() {
                           };
     if (real_decision > 1) {
       evict_from_idx(evict_idx);
-      std::cout << "evict aaaaa" << std::endl;
+      // std::cout << "evict aaaaa" << std::endl;
       // offload_from_idx(evict_idx);
     } else {
       // evict_from_idx(evict_idx);
@@ -397,7 +397,7 @@ void CheckpointTensorCell::reload() {
   at::pool.aps.push_back(weak_intrusive_ptr<AliasPool>(pool));
   // how to set tensor device and on undefined tensor error
   // input->cpuStorage.reset();
-  std::cout << "Reload finished " << std::endl;
+  // std::cout << "Reload finished " << std::endl;
   // return gpuTensor;
 }
 
@@ -495,7 +495,7 @@ void AliasPool::offload() {
       cell->offloaded = true;
     }
   }
-  std::cout << "offload finished  " << std::endl;
+  // std::cout << "offload finished  " << std::endl;
 }
 
 double AliasPool::cost(time_t current_time) {
