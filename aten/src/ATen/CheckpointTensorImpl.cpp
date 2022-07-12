@@ -214,7 +214,7 @@ void CheckpointPool::evict() {
   } else {
     auto release_aps = aps[evict_idx].lock();
     double real_decision;
-    if (release_aps->is_offloaded && release_aps->onGPU) {
+    if (release_aps->swapped) {
       double _computed_cost = release_aps->cost(current_time);
       double _swap_cost = release_aps->swap_cost;
       real_decision = _swap_cost / _computed_cost;
@@ -382,6 +382,7 @@ long loop_time() {
 void CheckpointTensorCell::reload() {
   STATS.track("AliasPool::reload");
   onGPU = true;
+  offloaded = false;
   at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
   cudaMemcpyKind kind = cudaMemcpyHostToDevice;
   // size_t res = input->cpuStorage->nbytes();
@@ -391,6 +392,8 @@ void CheckpointTensorCell::reload() {
   Tensor gpuTensor = cpuTensor.to(DeviceType::CUDA);
   cpuTensor.reset();
   t = std::make_unique<Tensor>(gpuTensor.detach());
+  pool->onGPU = true;
+  pool->is_offloaded = false;
   at::pool.aps.push_back(weak_intrusive_ptr<AliasPool>(pool));
   // how to set tensor device and on undefined tensor error
   // input->cpuStorage.reset();
@@ -403,24 +406,23 @@ Tensor uncheckpoint(const strong& input) {
   return input->get();
 }
 
-// Tensors uncheckpoint(const strongs& inputs) {
 Tensors uncheckpoint(strongs& inputs) {
   STATS.track("uncheckpoint");
   Tensors ret;
   ret.reserve(inputs.size());
   for (strong& input : inputs) {
     // inlined manually
-    if (!input->onGPU && input->offloaded) {
-      input->reload();
-      ret.push_back(input->get());
-    }
-    else if (!input->onGPU && input->evicted) {
-      ret.push_back(input->get());
-    } else {
-      ret.push_back(input->get());
-    }
+    // if (!input->onGPU && input->offloaded) {
+    //   input->reload();
+    //   ret.push_back(input->get());
+    // }
+    // else if (!input->onGPU && input->evicted) {
+    //   ret.push_back(input->get());
+    // } else {
+    //   ret.push_back(input->get());
+    // }
     // reload(input);
-    // ret.push_back(input->get());
+    ret.push_back(input->get());
   }
   return ret;
 };
@@ -478,6 +480,7 @@ void AliasPool::offload() {
   c10::Allocator* allocator = at::getCPUAllocator();
   onGPU = false;
   is_offloaded = true;
+  swapped = true;
   for (const weak& w : tensors) {
     if (auto cell = w.lock()) {
       auto& storage = cell->t->storage();

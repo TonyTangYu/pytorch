@@ -267,6 +267,7 @@ struct AliasPool : intrusive_ptr_target {
   bool is_evicted = false;
   bool is_offloaded = false;
   bool onGPU = true;
+  bool swapped = false;
   size_t memory;
   time_t last_used_time;
   double swap_cost;
@@ -364,8 +365,12 @@ struct CheckpointTensorCell : intrusive_ptr_target {
   }
   Tensor get() {
     if (! t) {
-      TORCH_CHECK(remat);
-      remat->remat();
+      if (evicted && !onGPU) {
+        TORCH_CHECK(remat);
+        remat->remat();
+      } else if (offloaded && !onGPU) {
+        reload();
+      }
     }
     TORCH_CHECK(t);
     TORCH_CHECK(! t->key_set().has(DispatchKey::CheckpointTensorId));
