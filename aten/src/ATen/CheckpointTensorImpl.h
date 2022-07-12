@@ -24,7 +24,7 @@
 
 #define likely(x)      __builtin_expect(!!(x), 1)
 #define unlikely(x)    __builtin_expect(!!(x), 0)
-#define TORCH_CHECK(a, ...) // profile mode
+// #define TORCH_CHECK(a, ...) // profile mode
 
 // System Description:
 // Every Tensor is managed by a CheckpointTensor,
@@ -342,6 +342,8 @@ struct CheckpointTensorCell : intrusive_ptr_target {
   intrusive_ptr<Rematerializer> remat;
   void evict() {
     TORCH_CHECK(remat);
+    onGPU = false;
+    evicted = true;
     t.reset();
   }
   void offload() {
@@ -365,15 +367,16 @@ struct CheckpointTensorCell : intrusive_ptr_target {
   }
   Tensor get() {
     if (! t) {
-      if (evicted && !onGPU) {
+      if (evicted) {
         TORCH_CHECK(remat);
         remat->remat();
-      } else if (offloaded && !onGPU) {
+      } else if (offloaded) {
         reload();
-      }
+      } else { 
+        TORCH_CHECK(false); }
     }
     TORCH_CHECK(t);
-    TORCH_CHECK(! t->key_set().has(DispatchKey::CheckpointTensorId));
+    TORCH_CHECK(! t->key_set().has(DispatchKey::Checkpoint));
     pool->last_used_time = std::chrono::system_clock::now();
     return *t;
   }

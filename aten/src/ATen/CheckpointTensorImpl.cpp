@@ -189,9 +189,9 @@ void CheckpointPool::evict() {
     else if (ap_strong->ecn) {
       cannot_evict();
     } 
-    else if (ap_strong->is_offloaded && !ap_strong->onGPU) {
-      cannot_evict();
-    } 
+    // else if (ap_strong->is_offloaded) {
+    //   cannot_evict();
+    // } 
     else {
       if (ap_strong->evictable()) {
         double cost = ap_strong->cost(current_time);
@@ -458,8 +458,6 @@ void AliasPool::evict() {
   for (const weak& w : tensors) {
     if (auto cell = w.lock()) {
       cell->evict();
-      cell->onGPU = false;
-      cell->evicted = true;
     }
   }
 }
@@ -491,7 +489,7 @@ void AliasPool::offload() {
       // cudaMemcpyAsync(cell->cpuStorage->data_ptr().get(), storage.data_ptr().get(), res, kind, stream);
       cell->cpuTensor = cell->t->to(DeviceType::CPU);
       time_t post = std::chrono::system_clock::now();
-      cell->t->reset();
+      cell->t.reset();
       cell->swap_cost = (post - pre).count();
       cell->onGPU = false;
       cell->offloaded = true;
@@ -655,7 +653,7 @@ intrusive_ptr<TensorImpl> CheckpointTensorImpl::shallow_copy_and_detach(const Va
 
 void CheckpointTensorImpl::shallow_copy_from(const c10::intrusive_ptr<TensorImpl>& impl) {
   STATS.track("CheckpointTensorCell::shallow_copy_from");
-  TORCH_CHECK(impl->key_set().has(DispatchKey::CheckpointTensorId));
+  TORCH_CHECK(impl->key_set().has(DispatchKey::Checkpoint));
   auto* cpti = dynamic_cast<CheckpointTensorImpl*>(impl.get());
   TORCH_CHECK(cpti != nullptr);
   ref->value = cpti->ref->value;
