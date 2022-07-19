@@ -186,6 +186,24 @@ Tensor checkpoint_clone(at::Tensor const& a, c10::optional<c10::MemoryFormat> b)
   return CheckpointTensorImpl::make("clone", rt, {a})[0];
 }
 
+Tensor checkpoint_pow(at::Tensor const& a, c10::Scalar b) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::pow(vec.at(0), b)};
+    };
+  return CheckpointTensorImpl::make("pow", rt, {a})[0];
+}
+
+Tensor& checkpoint_pow_out(at::Tensor& a, const Tensor& b, c10::Scalar c) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      Tensor a_ = vec.at(0);
+      at::pow_out(a_, vec.at(1), c);
+    };
+  CheckpointTensorImpl::mutate("pow_out", mt, {a, b}, {0});
+  return a;
+}
+
 Tensor checkpoint_where(at::Tensor const& a, at::Tensor const& b, at::Tensor const& c) {
   rematerialize_function_t rt =
     [=](const Tensors& vec) -> Tensors {
@@ -1301,6 +1319,34 @@ Tensor checkpoint_bmm(const Tensor& self, const Tensor& mat2) {
   };
   return CheckpointTensorImpl::make("bmm", rt, {self, mat2})[0];
 }
+
+Tensor& checkpoint_bmm_out(Tensor& a, const Tensor& b, const Tensor& c) {
+  mutate_function_t mt =
+    [=](const Tensors& vec) {
+      Tensor a_ = vec.at(0);
+      at::bmm_out(a_, vec.at(1), vec.at(2));
+    };
+    CheckpointTensorImpl::mutate("bmm_out", mt, {a, b, c}, {0});
+    return a;
+}
+
+// Tensor checkpoint_bmm_(const Tensor& self, const Tensor& mat2, bool deterministic) {
+//   rematerialize_function_t rt =
+//     [=](const Tensors& vec) -> Tensors {
+//     return {at::_bmm(vec.at(0), vec.at(1), deterministic)};
+//   };
+//   return CheckpointTensorImpl::make("bmm", rt, {self, mat2})[0];
+// }
+
+// Tensor& checkpoint_bmm_out_(Tensor& a, const Tensor& b, bool c) {
+//   mutate_function_t mt = 
+//     [=](const Tensors& vec) {
+//       Tensor a_ = vec.at(0);
+//       at::_bmm_out(a_, vec.at(1), vec.at(2), c);
+//   };
+//   CheckpointTensorImpl::mutate("_bmm_out", mt, {a, b}, {0});
+//   return a;
+// }
 
 Tensor checkpoint__softmax(const Tensor& self, long dim, bool half_to_float) {
   rematerialize_function_t rt =
