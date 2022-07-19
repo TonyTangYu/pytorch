@@ -1563,12 +1563,14 @@
   use_c10_dispatcher: full
   variants: function, method
   dispatch: 
+    CPU, CUDA: exp
     Checkpoint: checkpoint_exp
 
 - func: exp_(Tensor(a!) self) -> Tensor(a!)
   use_c10_dispatcher: full
   variants: function, method
   dispatch: 
+    CPU, CUDA: exp_
     Checkpoint: checkpoint_exp_
 
 - func: exp.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)

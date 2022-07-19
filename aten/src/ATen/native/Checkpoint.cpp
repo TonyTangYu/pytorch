@@ -1811,4 +1811,22 @@ Tensor& checkpoint_erfc_out(Tensor& a, const Tensor& b) {
   return a;
 }
 
+Tensor checkpoint_exp(const Tensor& self) {
+  rematerialize_function_t rt = 
+    [=](const Tensors& vec) -> Tensors {
+      return {at::exp(vec.at(0))};
+  };
+  return CheckpointTensorImpl::make("exp", rt, {self})[0];
+}
+
+Tensor& checkpoint_exp_(Tensor& a) {
+  mutate_function_t mt = 
+    [=](const Tensors& vec){
+      Tensor a_ = vec.at(0);
+      at::exp_(a_);
+  };
+  CheckpointTensorImpl::mutate("exp_", mt, {a}, {0});
+  return a;
+}
+
 }}
