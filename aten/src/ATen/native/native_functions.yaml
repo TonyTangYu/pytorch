@@ -1524,30 +1524,52 @@
 - func: erf(Tensor self) -> Tensor
   use_c10_dispatcher: full
   variants: function, method
+  dispatch:
+    CPU, CUDA: erf
+    Checkpoint: checkpoint_erf
 
 - func: erf_(Tensor(a!) self) -> Tensor(a!)
   use_c10_dispatcher: full
   variants: function, method
+  dispatch:
+    CPU, CUDA: erf_
+    Checkpoint: checkpoint_erf_
 
 - func: erf.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)
+  dispatch:
+    CPU, CUDA: erf_out
+    Checkpoint: checkpoint_erf_out
 
 - func: erfc(Tensor self) -> Tensor
   use_c10_dispatcher: full
   variants: function, method
+  dispatch:
+    CPU, CUDA: erfc
+    Checkpoint: checkpoint_erfc
 
 - func: erfc_(Tensor(a!) self) -> Tensor(a!)
   use_c10_dispatcher: full
   variants: function, method
+  dispatch:
+    CPU, CUDA: erfc_
+    Checkpoint: checkpoint_erfc_
 
 - func: erfc.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)
+  dispatch:
+    CPU, CUDA: erfc_out
+    Checkpoint: checkpoint_erfc_out
 
 - func: exp(Tensor self) -> Tensor
   use_c10_dispatcher: full
   variants: function, method
+  dispatch: 
+    Checkpoint: checkpoint_exp
 
 - func: exp_(Tensor(a!) self) -> Tensor(a!)
   use_c10_dispatcher: full
   variants: function, method
+  dispatch: 
+    Checkpoint: checkpoint_exp_
 
 - func: exp.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)
 

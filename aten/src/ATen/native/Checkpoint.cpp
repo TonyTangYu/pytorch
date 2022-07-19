@@ -1755,4 +1755,60 @@ Tensor& checkpoint_mv_out(at::Tensor& out, const Tensor& self, const Tensor& vec
   return {out};
 }
 
+Tensor checkpoint_erf(const Tensor& self) {
+  rematerialize_function_t rt = 
+    [=](const Tensors& vec) -> Tensors {
+      return {at::erf(vec.at(0))};
+  };
+  return CheckpointTensorImpl::make("erf", rt, {self})[0];
+}
+
+Tensor& checkpoint_erf_(Tensor& a) {
+  mutate_function_t mt = 
+    [=](const Tensors& vec){
+      Tensor a_ = vec.at(0);
+      at::erf_(a_);
+  };
+  CheckpointTensorImpl::mutate("erf_", mt, {a}, {0});
+  return a;
+}
+
+Tensor checkpoint_erfc(const Tensor& self) {
+  rematerialize_function_t rt = 
+    [=](const Tensors& vec) -> Tensors {
+      return {at::erfc(vec.at(0))};
+  };
+  return CheckpointTensorImpl::make("erfc", rt, {self})[0];
+}
+
+Tensor& checkpoint_erfc_(Tensor& a) {
+  mutate_function_t mt = 
+    [=](const Tensors& vec){
+      Tensor a_ = vec.at(0);
+      at::erfc_(a_);
+  };
+  CheckpointTensorImpl::mutate("erfc_", mt, {a}, {0});
+  return a;
+}
+
+Tensor& checkpoint_erf_out(Tensor& a, const Tensor& b) {
+  mutate_function_t mt = 
+    [=](const Tensors& vec){
+      Tensor a_ = vec.at(0);
+      at::erf_out(a_, vec.at(1));
+  };
+  CheckpointTensorImpl::mutate("erf_out", mt, {a, b}, {0});
+  return a;
+}
+
+Tensor& checkpoint_erfc_out(Tensor& a, const Tensor& b) {
+  mutate_function_t mt = 
+    [=](const Tensors& vec){
+      Tensor a_ = vec.at(0);
+      at::erfc_out(a_, vec.at(1));
+  };
+  CheckpointTensorImpl::mutate("erfc_out", mt, {a, b}, {0});
+  return a;
+}
+
 }}
