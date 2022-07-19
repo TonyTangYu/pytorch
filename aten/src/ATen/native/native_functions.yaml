@@ -907,17 +907,21 @@
     CUDA: bmm_out_cuda
     SparseCPU: bmm_out_sparse_cpu
     SparseCUDA: bmm_out_sparse_cuda
+    Checkpoint: checkpoint_bmm_out
 
 - func: _bmm(Tensor self, Tensor mat2, *, bool deterministic=False) -> Tensor
   use_c10_dispatcher: full
   variants: function
   dispatch:
     SparseCUDA: _bmm_sparse_cuda
+    # Checkpoint: checkpoint_bmm_
+
 
 - func: _bmm.out(Tensor self, Tensor mat2, *, bool deterministic=False, Tensor(a!) out) -> Tensor(a!)
   variants: function
   dispatch:
     SparseCUDA: _bmm_out_sparse_cuda
+    # Checkpoint: checkpoint_bmm_out_
 
 - func: broadcast_tensors(Tensor[] tensors) -> Tensor[]
   use_c10_dispatcher: full
@@ -2157,9 +2161,9 @@
 - func: matmul(Tensor self, Tensor other) -> Tensor
   use_c10_dispatcher: full
   variants: function, method
-  dispatch:
-    CPU, CUDA: matmul
-    Checkpoint: checkpoint_matmul
+  # dispatch:
+  #   CPU, CUDA: matmul
+  #   Checkpoint: checkpoint_matmul
 
 - func: matmul.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)
   #use_c10_dispatcher: full
@@ -3896,6 +3900,7 @@
   dispatch:
     CPU, CUDA: pow_out
     SparseCPU, SparseCUDA: pow_out_sparse_scalar
+    Checkpoint: checkpoint_pow_out
 
 - func: pow.Tensor_Scalar(Tensor self, Scalar exponent) -> Tensor
   use_c10_dispatcher: full
@@ -3903,6 +3908,7 @@
   dispatch:
     CPU, CUDA: pow
     SparseCPU, SparseCUDA: pow_sparse_scalar
+    Checkpoint: checkpoint_pow
 
 - func: zero_(Tensor(a!) self) -> Tensor(a!)
   use_c10_dispatcher: full
