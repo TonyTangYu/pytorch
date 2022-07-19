@@ -598,7 +598,6 @@ Tensor matmul(
   } else if (dim_tensor1 >= 3 && (dim_tensor2 == 1 || dim_tensor2 == 2)) {
     // optimization: use mm instead of bmm by folding tensor1's batch into
     // its leading matrix dimension.
-
     Tensor t2 = dim_tensor2 == 1 ? tensor2.unsqueeze(-1) : tensor2;
     auto size1 = tensor1.sizes();
     auto size2 = t2.sizes();
@@ -665,9 +664,10 @@ Tensor matmul(
     tensor2_bmm_view.insert(tensor2_bmm_view.end(), {m2, p});
 
     // flatten expanded batches
-    Tensor tensor1_expanded = tensor1.expand(tensor1_expand_size).contiguous().view(tensor1_bmm_view);
-    Tensor tensor2_expanded = tensor2.expand(tensor2_expand_size).contiguous().view(tensor2_bmm_view);
-
+    // Tensor tensor1_expanded = tensor1.expand(tensor1_expand_size).contiguous().view(tensor1_bmm_view);
+    Tensor tensor1_expanded = tensor1.expand(tensor1_expand_size).reshape(tensor1_bmm_view);
+    // Tensor tensor2_expanded = tensor2.expand(tensor2_expand_size).contiguous().view(tensor2_bmm_view);
+    Tensor tensor2_expanded = tensor2.expand(tensor2_expand_size).reshape(tensor2_bmm_view);
     // reshape batches back into result
     std::vector<int64_t> output_shape(expand_batch_portion);
     if (dim_tensor1 > 1) {
@@ -679,7 +679,6 @@ Tensor matmul(
 
     Tensor output = has_out ? at::_unsafe_view(at::bmm_out(out, tensor1_expanded, tensor2_expanded), output_shape)
                             : at::_unsafe_view(tensor1_expanded.bmm(tensor2_expanded), output_shape);
-
     return has_out ? out.set_(output) : output;
   }
 
@@ -1151,7 +1150,6 @@ Tensor mexp(const Tensor& a, bool compute_highest_degree_approx = false) {
       1.461661507209034e+00, // deg 12
       3.010066362817634e+00  // deg 18
     };
-
     return mexp_impl<float>(a_3d, thetas_float, compute_highest_degree_approx)
       .view(a.sizes());
   }
@@ -1164,7 +1162,6 @@ Tensor mexp(const Tensor& a, bool compute_highest_degree_approx = false) {
       2.996158913811580e-01, // deg 12
       1.090863719290036e+00  // deg 18
     };
-
     return mexp_impl<double>(a_3d, thetas_double, compute_highest_degree_approx)
       .view(a.sizes());
   }
