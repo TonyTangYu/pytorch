@@ -154,6 +154,9 @@ long current_memory() {
 void CheckpointPool::auto_evict() {
   STATS.track("CheckpointPool::auto_evict");
   if (has_memory_budget) {
+    // if (!offload_queue.empty() && current_memory() < memory_budget) {
+    //   prefetch();
+    // }
     while (current_memory() > memory_budget) {
       // std::cout << "current memory is: " << current_memory() << std::endl;
       evict();
@@ -411,7 +414,8 @@ void CheckpointTensorCell::reload() {
   c10::Allocator* allocator = at::cuda::getCUDADeviceAllocator();
   // auto ptr = std::make_shared<Storage>(Storage::use_byte_size_t(), res, allocator, false);
   // cudaMemcpyAsync(ptr->data_ptr().get(), input->cpuStorage->data_ptr().get(), res, kind, stream);
-  Tensor gpuTensor = cpuTensor.to(DeviceType::CUDA);
+  c10::Device device = optional_device_.value();
+  Tensor gpuTensor = cpuTensor.to(device);
   cpuTensor.reset();
   t = std::make_unique<Tensor>(gpuTensor.detach());
   pool->onGPU = true;
