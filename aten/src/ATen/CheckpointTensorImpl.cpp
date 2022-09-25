@@ -189,9 +189,9 @@ void CheckpointPool::evict() {
     else if (ap_strong->ecn) {
       cannot_evict();
     } 
-    // else if (ap_strong->is_offloaded) {
-    //   cannot_evict();
-    // } 
+    else if (ap_strong->is_offloaded) {
+      cannot_evict();
+    } 
     else {
       if (ap_strong->evictable()) {
         double cost = ap_strong->cost(current_time);
