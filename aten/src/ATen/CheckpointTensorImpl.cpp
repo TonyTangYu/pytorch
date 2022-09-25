@@ -250,6 +250,28 @@ void CheckpointPool::evict() {
   search_time_ += (post - pre).count();
 }
 
+void CheckpointPool::prefetch() {
+  if (offload_queue.empty()) {
+    return;
+  }
+  strong front_operand = offload_queue.front();
+  if (front_operand) {
+    for (int i=0; i < prefetch_count; i++) {
+      auto total_memory = current_memory() + memory(front_operand->get());
+      if (total_memory < memory_budget) {
+        front_operand->reload();
+        offload_queue.pop();
+      }
+      if (offload_queue.empty()) {
+        break;
+      } else {
+        front_operand = offload_queue.front();
+      }
+    }
+  }
+  return; 
+}
+
 CheckpointPool::CheckpointPool() { }
 
 namespace native {
@@ -493,6 +515,7 @@ void AliasPool::offload() {
       cell->swap_cost = (post - pre).count();
       cell->onGPU = false;
       cell->offloaded = true;
+      pool.offload_queue.push(cell);
     }
   }
   // std::cout << "offload finished  " << std::endl;

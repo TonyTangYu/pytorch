@@ -4,6 +4,7 @@
 #include <memory>
 #include <numeric>
 #include <random>
+#include <queue>
 
 #include <c10/core/Backend.h>
 #include <c10/core/MemoryFormat.h>
@@ -272,6 +273,9 @@ struct AliasPool : intrusive_ptr_target {
   time_t last_used_time;
   double swap_cost;
   std::shared_ptr<Storage> cpuStorage;
+  // for prefetch 
+  // std::queue<strong> offload_queue;
+  // void prefetch();
   // An aliaspool cant register itself to the checkpointpool - you have to do it yourself.
   AliasPool(const Unsafe&, intrusive_ptr<Rematerializer> head_remat, size_t memory) :
     head_remat(head_remat),
@@ -509,6 +513,10 @@ struct CheckpointPool {
   void auto_evict();
   void clear_checkpointpool();
   void add(const intrusive_ptr<AliasPool>&);
+  // for prefetch 
+  std::queue<strong> offload_queue;
+  void prefetch();
+  int64_t prefetch_count = 5;
   CheckpointPool();
 };
 
