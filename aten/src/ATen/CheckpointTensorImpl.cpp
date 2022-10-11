@@ -543,9 +543,9 @@ double AliasPool::cost(time_t current_time) {
   time_t pre = std::chrono::system_clock::now();
   auto cpi = head_remat->get_cpi();
   auto ecns = neighbor_ecn();
-  for (const auto& necn : ecns) {
-    cpi = merge_cpi(cpi, get_t(necn));
-  }
+  // for (const auto& necn : ecns) {
+  //   cpi = merge_cpi(cpi, get_t(necn));
+  // }
   auto ret = cpi.cost(memory, (current_time - last_used_time).count());
   time_t post = std::chrono::system_clock::now();
   cost_time_ += (post - pre).count();
