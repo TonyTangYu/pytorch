@@ -517,6 +517,7 @@ struct CheckpointPool {
   std::queue<strong> offload_queue;
   void prefetch();
   int64_t prefetch_count = 5;
+  // void clear_offload_queue(std::queue<strong> q);
   CheckpointPool();
 };
 

@@ -138,6 +138,10 @@ long remat_compute_time_ = 0;
 long search_time_ = 0;
 long cost_time_ = 0;
 
+long total_count = 0;
+long evict_count = 0;
+long offload_count = 0;
+
 CheckpointPool pool;
 void CheckpointPool::add(const intrusive_ptr<AliasPool>& p) {
   if (p->memory > 0 && (memory_count == 0 || !ignore_small_tensors || p->memory >= 0.01 * double(memory_sum/memory_count))) {
@@ -217,14 +221,15 @@ void CheckpointPool::evict() {
   } else {
     auto release_aps = aps[evict_idx].lock();
     double real_decision;
+    std::cout << "release_aps->swapped " << release_aps->swapped << std::endl;
     if (release_aps->swapped) {
-      double _computed_cost = release_aps->cost(current_time);
+      double _computed_cost = release_aps->compute_cost_func(current_time);
       double _swap_cost = release_aps->swap_cost;
       real_decision = _swap_cost / _computed_cost;
     } else {
       real_decision = release_aps->decision_func(current_time);
     }
-    // std::cout << "decision is  " << real_decision << std::endl;
+    std::cout << "decision is  " << real_decision << std::endl;
     auto evict_from_idx = [&](size_t idx) {
                             auto ap_strong = aps[idx].lock();
                             TORCH_CHECK(ap_strong.defined());
@@ -237,18 +242,25 @@ void CheckpointPool::evict() {
                             ap_strong->offload();
                             remove_from_aps(evict_idx);
                           };
+    total_count += 1;
     if (real_decision > 1) {
       evict_from_idx(evict_idx);
+      evict_count += 1;
       // std::cout << "evict aaaaa" << std::endl;
       // offload_from_idx(evict_idx);
     } else {
       // evict_from_idx(evict_idx);
       offload_from_idx(evict_idx);
+      offload_count += 1;
       // auto ap_strong = aps[evict_idx].lock();
       // TORCH_CHECK(ap_strong.defined());
       // remove_from_aps(evict_idx);
     }
   }
+  std::cout << "total count is: " << total_count << std::endl;
+  std::cout << "evict count is: " << evict_count << std::endl;
+  std::cout << "offload count is: " << offload_count << std::endl; 
+
   time_t post = std::chrono::system_clock::now();
   search_time_ += (post - pre).count();
 }
@@ -415,6 +427,7 @@ void CheckpointTensorCell::reload() {
   // auto ptr = std::make_shared<Storage>(Storage::use_byte_size_t(), res, allocator, false);
   // cudaMemcpyAsync(ptr->data_ptr().get(), input->cpuStorage->data_ptr().get(), res, kind, stream);
   c10::Device device = optional_device_.value();
+  // std::cout << "device: " << device << std::endl;
   Tensor gpuTensor = cpuTensor.to(device);
   cpuTensor.reset();
   t = std::make_unique<Tensor>(gpuTensor.detach());
@@ -519,7 +532,8 @@ void AliasPool::offload() {
       cell->swap_cost = (post - pre).count();
       cell->onGPU = false;
       cell->offloaded = true;
-      pool.offload_queue.push(cell);
+      // std::cout << "offloaded tensor device " << cell->optional_device_.value() << std::endl;
+      // pool.offload_queue.push(cell);
     }
   }
   // std::cout << "offload finished  " << std::endl;
@@ -554,10 +568,10 @@ double AliasPool::compute_cost_func(time_t current_time) {
 double AliasPool::decision_func(time_t current_time) {
   time_t pre = std::chrono::system_clock::now();
   auto cpi = head_remat->get_cpi();
-  auto ecns = neighbor_ecn();
-  for (const auto& necn : ecns) {
-    cpi = merge_cpi(cpi, get_t(necn));
-  }
+  // auto ecns = neighbor_ecn();
+  // for (const auto& necn : ecns) {
+  //   cpi = merge_cpi(cpi, get_t(necn));
+  // }
   auto ret = cpi.fake_decision(memory, (current_time - last_used_time).count());
   time_t post = std::chrono::system_clock::now();
   return ret;
