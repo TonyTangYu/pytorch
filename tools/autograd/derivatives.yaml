@@ -1066,6 +1066,18 @@
 - name: trunc(Tensor self) -> Tensor
   self: zeros_like(grad, at::MemoryFormat::Preserve)
 
+- name: to.device(Tensor self, Device device, ScalarType dtype, bool non_blocking=False, bool copy=False, MemoryFormat? memory_format=None) -> Tensor
+  self: to_backward(grad, self)
+
+- name: to.dtype_layout(Tensor self, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None, bool non_blocking=False, bool copy=False, MemoryFormat? memory_format=None) -> Tensor
+  self: to_backward(grad, self)
+
+- name: to.dtype(Tensor self, ScalarType dtype, bool non_blocking=False, bool copy=False, MemoryFormat? memory_format=None) -> Tensor
+  self: to_backward(grad, self)
+
+- name: to.other(Tensor self, Tensor other, bool non_blocking=False, bool copy=False, MemoryFormat? memory_format=None) -> Tensor
+  self: to_backward(grad, self)
+
 - name: to_dense(Tensor self) -> Tensor
   self: to_dense_backward(grad, self)
 
